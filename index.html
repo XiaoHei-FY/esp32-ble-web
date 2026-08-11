@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GSH-750S 蓝牙控制台</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#121212; color:#eee; font-family:"Microsoft YaHei",system-ui,sans-serif; padding:16px; max-width:520px; margin:0 auto; }
+  h1 { font-size:18px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .badge { font-size:11px; color:#9a9a9a; font-weight:normal; }
+  .conn { display:flex; gap:8px; margin:12px 0; }
+  button { background:#2a2a2a; color:#eee; border:1px solid #444; border-radius:8px; padding:10px 14px; font-size:14px; cursor:pointer; }
+  button:active { background:#3a3a3a; }
+  button.primary { background:#1f5fff; border-color:#1f5fff; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .status-line { font-size:12px; color:#8f8f8f; margin-bottom:12px; min-height:16px; }
+  .card { background:#1e1e1e; border-radius:12px; padding:12px; margin-bottom:12px; }
+  .card h2 { font-size:13px; color:#8f8f8f; margin-bottom:8px; }
+  .big { display:flex; align-items:baseline; gap:10px; }
+  .big .num { font-size:30px; font-weight:bold; }
+  .big .unit { font-size:13px; color:#8f8f8f; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .kv { background:#262626; border-radius:8px; padding:8px 10px; }
+  .kv .k { font-size:11px; color:#8f8f8f; }
+  .kv .v { font-size:16px; margin-top:2px; }
+  .btnrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .btnrow button { padding:8px 12px; font-size:13px; }
+  .paused { color:#ffcc00; }
+  form { display:flex; flex-direction:column; gap:8px; }
+  input, select { background:#262626; border:1px solid #444; color:#eee; border-radius:8px; padding:10px; font-size:14px; width:100%; }
+  .hint { font-size:11px; color:#777; margin-top:6px; }
+  .ok { color:#3ddc84; } .err { color:#ff6b6b; }
+  .fan-slider { display:flex; align-items:center; gap:10px; margin-top:8px; }
+  .fan-slider input[type=range] { flex:1; }
+</style>
+</head>
+<body>
+<h1>GSH-750S <span class="badge">Web Bluetooth 控制台</span></h1>
+<div class="status-line" id="status">未连接。需要 Android Chrome / Windows Edge（Web Bluetooth），iPhone Safari 不支持。</div>
+
+<div class="conn">
+  <button class="primary" id="btnConnect">连接设备</button>
+  <button id="btnDisconnect" disabled>断开</button>
+</div>
+
+<div id="main" style="display:none">
+  <!-- 概览 -->
+  <div class="card">
+    <h2>概览</h2>
+    <div class="big">
+      <span class="num" id="s_power_w">--.-</span><span class="unit">W</span>
+      <span style="flex:1"></span>
+      <span class="num" id="s_dr" style="font-size:20px">--%</span>
+      <span class="unit">负载</span>
+    </div>
+    <div class="grid2">
+      <div class="kv"><div class="k">累计 Wh</div><div class="v"><span id="s_total_wh">--</span> <span id="s_total_paused" class="paused" style="display:none">[已暂停]</span></div></div>
+      <div class="kv"><div class="k">运行时长</div><div class="v" id="s_run">--:--:--</div></div>
+      <div class="kv"><div class="k">时间</div><div class="v" id="s_time">--:--:--</div></div>
+      <div class="kv"><div class="k">日期</div><div class="v" id="s_date">----/--/--</div></div>
+    </div>
+    <div class="btnrow">
+      <button data-cmd="power:1">电源 ON</button>
+      <button data-cmd="power:0">电源 OFF</button>
+      <button data-cmd="wh:total:reset">总清零</button>
+      <button data-cmd="wh:total:pause">总暂停</button>
+      <button data-cmd="wh:total:resume">总恢复</button>
+    </div>
+  </div>
+
+  <!-- CH1 / CH2 -->
+  <div class="card">
+    <h2>CH1 / CH2</h2>
+    <div class="grid2">
+      <div class="kv"><div class="k">CH1 电压/电流/功率</div><div class="v"><span id="s_c1v">--</span>V <span id="s_c1a">--</span>A <span id="s_c1w">--</span>W</div></div>
+      <div class="kv"><div class="k">CH1 Wh</div><div class="v"><span id="s_c1wh">--</span> <span id="s_c1paused" class="paused" style="display:none">[暂停]</span></div></div>
+      <div class="kv"><div class="k">CH1 运行</div><div class="v" id="s_c1rt">--:--:--</div></div>
+      <div class="kv"><div class="k">CH2 电压/电流/功率</div><div class="v"><span id="s_c2v">--</span>V <span id="s_c2a">--</span>A <span id="s_c2w">--</span>W</div></div>
+      <div class="kv"><div class="k">CH2 Wh</div><div class="v"><span id="s_c2wh">--</span> <span id="s_c2paused" class="paused" style="display:none">[暂停]</span></div></div>
+      <div class="kv"><div class="k">CH2 运行</div><div class="v" id="s_c2rt">--:--:--</div></div>
+    </div>
+    <div class="btnrow">
+      <button data-cmd="wh:ch1:reset">CH1 清零</button>
+      <button data-cmd="wh:ch1:pause">CH1 暂停</button>
+      <button data-cmd="wh:ch1:resume">CH1 恢复</button>
+      <button data-cmd="wh:ch2:reset">CH2 清零</button>
+      <button data-cmd="wh:ch2:pause">CH2 暂停</button>
+      <button data-cmd="wh:ch2:resume">CH2 恢复</button>
+    </div>
+  </div>
+
+  <!-- 风扇 -->
+  <div class="card">
+    <h2>风扇</h2>
+    <div class="grid2">
+      <div class="kv"><div class="k">转速</div><div class="v" id="s_rpm">0 RPM</div></div>
+      <div class="kv"><div class="k">占空比</div><div class="v" id="s_duty">0%</div></div>
+      <div class="kv"><div class="k">温度</div><div class="v" id="s_temp">-- °C</div></div>
+      <div class="kv"><div class="k">模式</div><div class="v" id="s_auto">--</div></div>
+    </div>
+    <div class="btnrow">
+      <button data-cmd="fan:run:1">风扇开</button>
+      <button data-cmd="fan:run:0">风扇关</button>
+      <button data-cmd="fan:auto:1">自动温控</button>
+      <button data-cmd="fan:auto:0">手动模式</button>
+    </div>
+    <div class="fan-slider">
+      <span style="font-size:12px;color:#8f8f8f">手动占空比</span>
+      <input type="range" id="fanDuty" min="0" max="100" step="1" value="50" oninput="sendFanDuty(this.value)">
+      <span id="fanDutyVal" style="font-size:13px">50%</span>
+    </div>
+  </div>
+
+  <!-- 配网 -->
+  <div class="card">
+    <h2>WiFi 配网（通过蓝牙下发，设备随后自动连接）</h2>
+    <form id="provForm">
+      <input type="text" id="p_ssid" placeholder="WiFi 名称 (SSID)" required>
+      <input type="password" id="p_pwd" placeholder="密码（留空则复用已保存密码）">
+      <button type="submit" class="primary">下发并连接</button>
+    </form>
+    <div class="hint">提示：BLE 仅下发凭据，连接过程由设备自行完成，可在 WiFi 网页查看结果。</div>
+  </div>
+</div>
+
+<script>
+let device = null;
+let service = null;
+let provChar = null, stateChar = null, ctlChar = null;
+let pollTimer = null;
+
+const $ = id => document.getElementById(id);
+
+/* ---------- 分块读取状态（设备端协议：0xAA 起始 / 0xBB 续 / 0xFF 结束） ---------- */
+async function readState() {
+  const parts = [];
+  let guard = 0;
+  for (;;) {
+    const dv = await stateChar.readValue();
+    const head = dv.getUint8(0);
+    if (head === 0xFF) break;
+    if (head === 0xAA && parts.length > 0) parts.length = 0; // 异常时新帧重置
+    for (let i = 1; i < dv.byteLength; i++) parts.push(dv.getUint8(i));
+    if (++guard > 300) { console.warn("state read guard hit"); break; }
+  }
+  const text = new TextDecoder().decode(new Uint8Array(parts));
+  return JSON.parse(text);
+}
+
+function renderState(s) {
+  $("s_power_w").textContent = s.power_w.toFixed(1);
+  $("s_dr").textContent = Math.round(s.dr) + "%";
+  $("s_total_wh").textContent = s.total_wh.toFixed(3);
+  $("s_total_paused").style.display = s.total_paused ? "" : "none";
+  $("s_run").textContent = s.run;
+  $("s_time").textContent = s.time;
+  $("s_date").textContent = s.date;
+
+  $("s_c1v").textContent = s.ch1.v.toFixed(2);
+  $("s_c1a").textContent = s.ch1.a.toFixed(3);
+  $("s_c1w").textContent = s.ch1.w.toFixed(2);
+  $("s_c1wh").textContent = s.ch1.wh.toFixed(3);
+  $("s_c1paused").style.display = s.ch1.paused ? "" : "none";
+  $("s_c1rt").textContent = s.ch1.rt;
+  $("s_c2v").textContent = s.ch2.v.toFixed(2);
+  $("s_c2a").textContent = s.ch2.a.toFixed(3);
+  $("s_c2w").textContent = s.ch2.w.toFixed(2);
+  $("s_c2wh").textContent = s.ch2.wh.toFixed(3);
+  $("s_c2paused").style.display = s.ch2.paused ? "" : "none";
+  $("s_c2rt").textContent = s.ch2.rt;
+
+  $("s_rpm").textContent = s.fan.rpm + " RPM";
+  $("s_duty").textContent = s.fan.duty + "%";
+  $("s_temp").textContent = s.fan.temp + " °C";
+  $("s_auto").textContent = s.fan.auto ? "自动温控" : "手动 " + s.fan.duty_manual + "%";
+}
+
+async function poll() {
+  if (!stateChar) return;
+  try {
+    const s = await readState();
+    renderState(s);
+  } catch (e) {
+    console.warn("poll error", e);
+  }
+}
+
+/* ---------- 控制 ---------- */
+async function writeCmd(cmd) {
+  if (!ctlChar) return;
+  try {
+    await ctlChar.writeValue(new TextEncoder().encode(cmd));
+    $("status").textContent = "已发送: " + cmd;
+  } catch (e) {
+    $("status").textContent = "发送失败: " + e.message;
+  }
+  setTimeout(poll, 400); // 设备处理完再拉最新状态
+}
+
+function sendFanDuty(v) {
+  $("fanDutyVal").textContent = v + "%";
+  writeCmd("fan:duty:" + v);
+}
+
+/* ---------- 连接 ---------- */
+async function connect() {
+  if (!navigator.bluetooth) {
+    $("status").textContent = "此浏览器不支持 Web Bluetooth，请用 Android Chrome / Windows Edge。";
+    return;
+  }
+  try {
+    $("status").textContent = "正在搜索设备 gsh-750s…";
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: "gsh-750s" }],
+      optionalServices: [0xFFE0]
+    });
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+    $("status").textContent = "已找到，正在连接…";
+    const server = await device.gatt.connect();
+    service = await server.getPrimaryService(0xFFE0);
+    provChar  = await service.getCharacteristic(0xFFE1);
+    stateChar = await service.getCharacteristic(0xFFE2);
+    ctlChar   = await service.getCharacteristic(0xFFE3);
+    $("main").style.display = "";
+    $("btnDisconnect").disabled = false;
+    $("btnConnect").disabled = true;
+    $("status").textContent = "已连接: " + (device.name || "gsh-750s");
+    await poll();
+    pollTimer = setInterval(poll, 1000);
+  } catch (e) {
+    $("status").textContent = "连接失败: " + e.message;
+  }
+}
+
+function onDisconnected() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  $("main").style.display = "none";
+  $("btnDisconnect").disabled = true;
+  $("btnConnect").disabled = false;
+  $("status").textContent = "已断开连接";
+}
+
+async function disconnect() {
+  if (device && device.gatt.connected) device.gatt.disconnect();
+  else onDisconnected();
+}
+
+/* ---------- 配网 ---------- */
+$("provForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  if (!provChar) return;
+  const ssid = $("p_ssid").value.trim();
+  if (!ssid) return;
+  const pwd = $("p_pwd").value;
+  try {
+    await provChar.writeValue(new TextEncoder().encode(ssid + "|" + pwd));
+    $("status").textContent = "已下发 WiFi 凭据，设备开始连接…（稍后可打开 http://gsh-750s.local 查看）";
+  } catch (e) {
+    $("status").textContent = "配网失败: " + e.message;
+  }
+});
+
+/* ---------- 事件绑定 ---------- */
+$("btnConnect").addEventListener("click", connect);
+$("btnDisconnect").addEventListener("click", disconnect);
+document.querySelectorAll("[data-cmd]").forEach(btn => {
+  btn.addEventListener("click", () => writeCmd(btn.dataset.cmd));
+});
+</script>
+</body>
+</html>
