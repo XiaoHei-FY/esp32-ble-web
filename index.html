@@ -184,11 +184,13 @@ button.wide{width:100%}
     <section id="pg-fan" class="spage">
       <h2 class="h2" style="margin-top:0">风扇参数设置</h2>
 
-      <!-- 运行状态：从主页移入，实时显示启停/模式/占空比 -->
+      <!-- 运行状态：从主页移入，实时显示启停/模式/占空比 + 温度/转速 -->
       <div class="card" style="margin-bottom:10px">
         <h3 style="margin:0 0 8px;color:#9af">运行状态</h3>
         <div class="row"><span>启停状态</span><span id="fst"><span class="sec">关闭</span></span></div>
         <div class="row"><span>模式</span><span id="fmode" class="sec">自动温控</span></div>
+        <div class="row"><span>温度</span><span id="ftmp_s">35°C</span></div>
+        <div class="row"><span>转速</span><span><span id="frpm_s" class="big">00000</span><span class="unit">RPM</span></span></div>
         <div class="row"><span>占空比</span><span><span id="fdty" class="big">0</span><span class="unit">%</span></span></div>
       </div>
 
@@ -439,6 +441,8 @@ function renderState(s){
   $('ftmp').textContent=(+f.temp).toFixed(0)+'°C';
   let r=String(f.rpm); while(r.length<5)r='0'+r;  /* 恒定 5 位数 00000 */
   $('frpm').textContent=r;
+  $('ftmp_s').textContent=(+f.temp).toFixed(0)+'°C';   /* 风扇设置页运行状态卡同步 */
+  $('frpm_s').textContent=r;
 
   /* 风扇运行开关按钮（仅手动模式区）：跟随设备总开关状态 */
   fanRunState=(+f.run)?1:0;
@@ -464,25 +468,48 @@ async function poll(){
 
 /* ---------- BLE 控制通道 ---------- */
 function setStatus(t){ $('status').textContent=t; }
-/* 返回 true=写入成功 / false=失败（供"上传参数"区分成败反馈） */
-async function writeCmd(cmd, quiet){
-  if(!ctlChar){ setStatus('未连接，请先连接设备'); return false; }
-  try{
-    await ctlChar.writeValue(new TextEncoder().encode(cmd));
-    if(!quiet) setStatus('已发送: '+cmd);
-    setTimeout(poll,400);   /* 设备处理完再拉最新状态 */
-    return true;
-  }catch(e){
-    setStatus('发送失败: '+e.message);
-    return false;
-  }
+/* BLE 写串行队列：writeValue 并发调用会触发 "GATT operation already in progress" 失败
+ * （连点按钮、滑块拖动时尤其明显），所有写排队逐一执行；偶发失败自动重试 1 次。 */
+let bleWriteChain=Promise.resolve();
+function writeCmd(cmd, quiet, _retried){
+  if(!ctlChar){ setStatus('未连接，请先连接设备'); return Promise.resolve(false); }
+  const p=bleWriteChain.then(()=>ctlChar.writeValue(new TextEncoder().encode(cmd)))
+    .then(()=>{
+      if(!quiet) setStatus('已发送: '+cmd);
+      setTimeout(poll,300);   /* 设备处理完再拉最新状态 */
+      return true;
+    },async e=>{
+      if(!_retried){         /* 偶发失败：稍等 100ms 重试 1 次（BLE 栈偶尔忙） */
+        await new Promise(r=>setTimeout(r,100));
+        return writeCmd(cmd,quiet,true);
+      }
+      setStatus('发送失败: '+e.message);
+      return false;
+    });
+  bleWriteChain=p.catch(()=>{});   /* 队列吞掉错误，后续写不受影响 */
+  return p;
+}
+/* 滑块高频写合并：拖动期间每 120ms 只发最新值（trailing），避免洪泛写把队列堵死 */
+let bleTail=null, bleTailT=null;
+function bleTailWrite(cmd){
+  bleTail=cmd;
+  if(bleTailT) return;
+  bleTailT=setInterval(()=>{
+    if(bleTail===null){ clearInterval(bleTailT); bleTailT=null; return; }
+    const c=bleTail; bleTail=null;
+    writeCmd(c,true);
+  },120);
 }
 
 /* ---------- 电源（CH1/CH2 独立开关，对应设备 LM74502 EN 引脚） ---------- */
 function toggleCh(ch){
   const b=$(ch===1?'ch1pwr':'ch2pwr');
   const cur=b.classList.contains('on');
-  writeCmd('power:ch'+ch+':'+(cur?0:1));
+  const nxt=cur?0:1;                       /* 乐观更新：点击立即翻转按钮，不等设备回显 */
+  b.classList.toggle('on',!!nxt);
+  b.classList.toggle('off',!nxt);
+  b.textContent=nxt?'POWER ON':'POWER OFF';
+  writeCmd('power:ch'+ch+':'+nxt);
 }
 
 /* ---- 操作确认弹窗：清零/暂停前二次确认，防止误触 ----
@@ -519,7 +546,12 @@ function sendWh(ch,act){
 }
 
 /* ---------- 风扇：运行开关 / 模式 / 手动占空比 ---------- */
-function fanToggleRun(){ writeCmd('fan:run:'+(fanRunState?0:1)); }
+function fanToggleRun(){
+  fanRunState=fanRunState?0:1;             /* 乐观更新：点击立即翻转按钮，不等回显 */
+  const rb=$('fanRunBtn');
+  if(rb){ rb.textContent=fanRunState?'停止':'开启'; rb.style.background=fanRunState?'#c33':'#2a7'; }
+  writeCmd('fan:run:'+fanRunState);
+}
 
 /* ---- 左侧设置菜单：收起/展开 + 点击菜单项切换主内容区面板 ---- */
 let menuOpen=false;   /* 初始收起：进页面直接看主监控，不弹设置菜单 */
@@ -594,7 +626,7 @@ function fanSyncSlider(which,v){
   if(which==='man' ){
     $('l_man').textContent=v; pendingCfg.duty_manual=clampInt(v,0,100);
     if(!$('fm_auto').checked){   /* 手动模式 → 实时下发（运行中立即变速，停止时更新内存值，点开启即生效） */
-      writeCmd('fan:duty:'+clampInt(v,0,100), true);
+      bleTailWrite('fan:duty:'+clampInt(v,0,100));
     }
   }
   if(which==='on'  ){ v=clampInt(v,0,120);  $('l_on'  ).textContent=v; $('n_on'  ).value=v; pendingCfg.t_on_x10   =v*10; }
@@ -667,7 +699,7 @@ async function fanSaveAll(){
 /* ---- 屏幕亮度：拖动实时调节（仅内存生效，不写 NVS；重启回到默认 100%，防闪存磨损） ---- */
 function blLive(v){
   $('bl_val').textContent=v;
-  writeCmd('bl:'+v,true);
+  bleTailWrite('bl:'+v);
 }
 
 /* ---- 电流校准：读取（状态快照） / 保存（BLE 下发，与网页 /api/cal_save 校验一致） ---- */
