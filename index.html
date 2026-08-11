@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GSH-750S 电源监控（蓝牙）</title>
 <!-- Web Bluetooth 宿主页：界面与设备 WiFi 仪表盘一致。
-数据经 BLE GATT 传输（配网 0xFFE1 / 状态 0xFFE2 分块读 / 控制 0xFFE3），
-受 BLE 速率限制，状态按 1s 轮询（WiFi 页是 200ms 实时曲线，这里做不了）。 -->
+     数据经 BLE GATT 传输（配网 0xFFE1 / 状态 0xFFE2 分块读 / 控制 0xFFE3），
+     受 BLE 速率限制，状态按 1s 轮询（WiFi 页是 200ms 实时曲线，这里做不了）。 -->
 <style>
 *{box-sizing:border-box}
 body{font-family:sans-serif;margin:0;padding:12px;background:#111;color:#eee;font-size:14px}
@@ -23,6 +23,7 @@ button.wide{width:100%}
 .pwrbtn{padding:12px 24px;font-size:16px;font-weight:bold;min-width:120px}
 .pwrbtn.on{background:#2a7}
 .pwrbtn.off{background:#555}
+.pwrbtn.sm{padding:6px 10px;font-size:12px;min-width:0;width:100%;box-sizing:border-box}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
 .card{background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:10px}
 .card h3{margin:0 0 8px;font-size:13px;color:#9f9}
@@ -67,14 +68,58 @@ button.wide{width:100%}
 </div>
 <div class="status-line" id="status">未连接。需 Android Chrome / Windows Edge（Web Bluetooth），iPhone Safari 不支持。</div>
 
-<!-- 其他设置面板：内嵌式，显示/隐藏切换（BLE 支持范围=WiFi 配网；其余设置请在设备 WiFi 网页操作） -->
+<!-- 其他设置面板：内嵌式，显示/隐藏切换（BLE 支持电流校准/屏幕亮度/WiFi 配网，与设备 WiFi 网页一致） -->
 <div id="wifipanel" style="display:none;margin-top:12px;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:12px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <h3 style="margin:0;color:#9f9">其他设置</h3>
   </div>
+
+  <!-- ===== 子区 0：电流校准（与设备 WiFi 网页一致） ===== -->
+  <div style="border:1px solid #333;border-radius:6px;padding:10px;margin-bottom:12px;background:#171717">
+    <h4 style="margin:0 0 8px;color:#9f9">电流校准</h4>
+    <div class="sec" style="margin-bottom:8px">用电子负载/万用表标定：系数 = 实际电流 ÷ 设备显示电流（默认 1.000）</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <div>
+        <div class="sec" style="font-size:10px;margin-bottom:3px">校准系数</div>
+        <input type="number" id="cal_gain" step="0.001" min="0.1" max="5" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px;text-align:center">
+      </div>
+      <div>
+        <div class="sec" style="font-size:10px;margin-bottom:3px">采样平均</div>
+        <select id="cal_avg" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px">
+          <option value="1">1 次（最快）</option>
+          <option value="4">4 次</option>
+          <option value="16">16 次</option>
+          <option value="64">64 次</option>
+          <option value="128">128 次</option>
+          <option value="256">256 次</option>
+          <option value="512">512 次</option>
+          <option value="1024">1024 次（最平滑）</option>
+        </select>
+      </div>
+      <div>
+        <div class="sec" style="font-size:10px;margin-bottom:3px">IIR 平滑</div>
+        <input type="number" id="cal_iir" step="0.01" min="0.02" max="1" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px;text-align:center">
+      </div>
+    </div>
+    <div class="sec" style="font-size:11px;color:#888;margin-top:6px">平均次数越多读数越稳但反应越慢；平滑数值越小越稳但越慢（越大越快但易跳动）。</div>
+    <div class="sec" id="cal_msg" style="margin-top:6px"></div>
+    <button id="cal_save" onclick="calSave()" style="width:100%;margin-top:8px;padding:8px;border:none;border-radius:4px;background:#2a5;color:#fff;font-size:14px;cursor:pointer">上传参数</button>
+  </div>
+
+  <!-- ===== 子区 1：屏幕亮度（PWM 背光，仅内存调节，不写 NVS 防闪存磨损） ===== -->
+  <div style="border:1px solid #333;border-radius:6px;padding:10px;margin-bottom:12px;background:#171717">
+    <h4 style="margin:0 0 8px;color:#9f9">屏幕亮度</h4>
+    <div style="display:flex;align-items:center;gap:10px">
+      <input type="range" id="bl_slider" min="0" max="100" step="1" value="100"
+             style="flex:1" oninput="blLive(this.value)">
+      <span class="sec" style="min-width:38px;text-align:right"><span id="bl_val">100</span>%</span>
+    </div>
+  </div>
+
+  <!-- ===== 子区 2：WiFi 配网（蓝牙下发） ===== -->
   <div style="border:1px solid #333;border-radius:6px;padding:10px;background:#171717">
     <h4 style="margin:0 0 8px;color:#9f9">WiFi 配网（蓝牙下发）</h4>
-    <div class="sec" style="margin-bottom:8px">通过蓝牙把 WiFi 凭据发给设备，设备随后自动连接。电流校准、屏幕亮度等设置请连接设备 WiFi 后在其网页操作。</div>
+    <div class="sec" style="margin-bottom:8px">通过蓝牙把 WiFi 凭据发给设备，设备随后自动连接。</div>
     <form id="provForm">
       <input type="text" id="p_ssid" placeholder="WiFi 名称 (SSID)" required>
       <input type="password" id="p_pwd" placeholder="密码（留空则复用已保存密码）">
@@ -85,11 +130,9 @@ button.wide{width:100%}
 </div>
 
 <div id="main" style="display:none">
-  <!-- 主卡片：电源 + 总功率 + 负载率 + 累计电能/时长 -->
+  <!-- 主卡片：总功率 + 负载率 + 累计电能/时长 -->
   <div class="card">
-    <div class="row"><span>电源开关</span><span id="pstat" class="sec">关闭</span></div>
-    <button id="pwr" class="pwrbtn off wide" onclick="togglePower()">POWER OFF</button>
-    <div class="row" style="margin-top:8px"><span>总功率</span><span><span id="pw" class="big">0.0</span><span class="unit">W</span></span></div>
+    <div class="row"><span>总功率</span><span><span id="pw" class="big">0.0</span><span class="unit">W</span></span></div>
     <div class="row"><span>负载率</span><span id="dr">0%</span></div>
     <div class="drbar"><i id="drbar" style="width:0%;background:#2a7"></i></div>
     <div class="row"><span>累计电能 <span id="tp" class="sec" style="margin-left:4px"></span></span><span id="tot">0.00 Wh</span></div>
@@ -104,6 +147,7 @@ button.wide{width:100%}
   <div class="grid">
     <div class="card">
       <h3><span class="ch-chip ch1">CH1</span></h3>
+      <button id="ch1pwr" class="pwrbtn off sm" onclick="toggleCh(1)">POWER OFF</button>
       <div class="row"><span>电压</span><span id="ch1v">0.000 V</span></div>
       <div class="row"><span>电流</span><span id="ch1a">0.000 A</span></div>
       <div class="row"><span>功率</span><span id="ch1w">0.0 W</span></div>
@@ -116,6 +160,7 @@ button.wide{width:100%}
     </div>
     <div class="card">
       <h3><span class="ch-chip ch2">CH2</span></h3>
+      <button id="ch2pwr" class="pwrbtn off sm" onclick="toggleCh(2)">POWER OFF</button>
       <div class="row"><span>电压</span><span id="ch2v">0.000 V</span></div>
       <div class="row"><span>电流</span><span id="ch2a">0.000 A</span></div>
       <div class="row"><span>功率</span><span id="ch2w">0.0 W</span></div>
@@ -284,11 +329,10 @@ let fanRunState=0;                /* 风扇运行总开关状态，renderState �
 function renderState(s){
   $('date').textContent=s.date;
   $('tm').textContent=s.time;
-  const on=s.power_on;
-  const b=$('pwr');
-  b.className='pwrbtn '+(on?'on':'off')+' wide';
-  b.textContent=on?'POWER ON':'POWER OFF';
-  $('pstat').textContent=on?'ON':'OFF';
+  /* CH1/CH2 电源输出开关状态 */
+  const chsw=(id,on)=>{const b=$(id);b.className='pwrbtn '+(on?'on':'off')+' sm';b.textContent=on?'POWER ON':'POWER OFF';};
+  chsw('ch1pwr',s.ch1.power_on?1:0);
+  chsw('ch2pwr',s.ch2.power_on?1:0);
   $('pw').textContent=fv(s.power_w);
   $('dr').textContent=s.dr+'%';
   /* 负载率进度条：显示宽度 0~100%，>100% 时到顶；颜色渐变用真实 dr (保留 >100 变红) */
@@ -338,6 +382,9 @@ function renderState(s){
   if($('fanpanel').style.display==='block' && !fanDirty){
     fanFillPanelCfg(f);
   }
+
+  /* 电流校准参数（其他设置面板回填用，校准值不在主界面显示） */
+  if(s.cal) window._cal=s.cal;
 }
 
 async function poll(){
@@ -364,10 +411,11 @@ async function writeCmd(cmd, quiet){
   }
 }
 
-/* ---------- 电源 ---------- */
-function togglePower(){
-  const cur=$('pwr').classList.contains('on');
-  writeCmd('power:'+(cur?0:1));
+/* ---------- 电源（CH1/CH2 独立开关，对应设备 LM74502 EN 引脚） ---------- */
+function toggleCh(ch){
+  const b=$(ch===1?'ch1pwr':'ch2pwr');
+  const cur=b.classList.contains('on');
+  writeCmd('power:ch'+ch+':'+(cur?0:1));
 }
 
 /* ---- 操作确认弹窗：清零/暂停前二次确认，防止误触 ----
@@ -536,12 +584,61 @@ async function fanSaveAll(){
   }
 }
 
-/* ---------- 其他设置面板（内嵌式切换，仅配网） ---------- */
+/* ---------- 其他设置面板（内嵌式切换：电流校准 + 屏幕亮度 + WiFi 配网） ---------- */
 function toggleProv(){
   const wp=$('wifipanel');
   const show=(wp.style.display==='none'||!wp.style.display);
   wp.style.display=show?'block':'none';
   $('wifibt').innerHTML=show?'收起':'其他设置';
+  if(show) calLoad();   /* 展开即回填当前校准值 */
+}
+
+/* ---- 屏幕亮度：拖动实时调节（仅内存生效，不写 NVS；重启回到默认 100%，防闪存磨损） ---- */
+function blLive(v){
+  $('bl_val').textContent=v;
+  writeCmd('bl:'+v,true);
+}
+
+/* ---- 电流校准：读取（状态快照） / 保存（BLE 下发，与网页 /api/cal_save 校验一致） ---- */
+/* 上传反馈消息条（与风扇面板一致）：上传中灰条 / 成功绿条 / 失败红条，5 秒后自动消失 */
+function calMsg(text,ok){
+  const el=$('cal_msg');
+  el.style.display='block';
+  el.textContent=text;
+  el.style.color= ok===true?'#6f6' : (ok===false?'#f66':'#ccc');
+  el.style.background= ok===true?'rgba(40,180,80,.18)' : (ok===false?'rgba(220,60,60,.18)':'rgba(120,120,120,.15)');
+  el.style.border='1px solid '+(ok===true?'#2a5':(ok===false?'#c44':'#555'));
+  clearTimeout(calMsg._t);
+  calMsg._t=setTimeout(()=>{el.style.display='none';el.textContent='';},5000);
+}
+/* 从最近一次状态快照回填校准控件（状态 JSON 含 cal.gain/avg/iir） */
+function calLoad(){
+  const d=window._cal; if(!d) return;
+  const el=$('cal_gain');
+  if(el) el.value=(+d.gain||1).toFixed(3);
+  const av=$('cal_avg');
+  if(av && d.avg) av.value=String(d.avg);
+  const ir=$('cal_iir');
+  if(ir && d.iir!=null) ir.value=(+d.iir).toFixed(2);
+}
+async function calSave(){
+  const g=parseFloat($('cal_gain').value);
+  const av=$('cal_avg'), ir=$('cal_iir');
+  const i=parseFloat(ir.value);
+  if(isNaN(g)||g<0.1||g>5){calMsg('系数范围 0.100 ~ 5.000',false);return;}
+  if(isNaN(i)||i<0.02||i>1){calMsg('平滑系数范围 0.02 ~ 1.00',false);return;}
+  const btn=$('cal_save');
+  btn.textContent='上传中…'; btn.style.background='#27a';
+  calMsg('正在上传参数…',null);
+  const cmd='cal:save:gain='+g.toFixed(3)+'&avg='+av.value+'&iir='+i.toFixed(2);
+  const ok=await writeCmd(cmd,true);
+  btn.textContent='上传参数'; btn.style.background='#2a5';
+  if(ok){
+    calMsg('✓ 上传成功：参数已写入设备并立即生效',true);
+    setTimeout(poll,500);   /* 下一轮状态回填设备实际生效值 */
+  }else{
+    calMsg('✗ 发送失败：设备未连接或写入出错',false);
+  }
 }
 
 /* ---------- 连接 / 断开 ---------- */
