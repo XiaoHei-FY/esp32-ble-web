@@ -2,271 +2,609 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GSH-750S 蓝牙控制台</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GSH-750S 电源监控（蓝牙）</title>
+<!-- Web Bluetooth 宿主页：界面与设备 WiFi 仪表盘一致。
+     数据经 BLE GATT 传输（配网 0xFFE1 / 状态 0xFFE2 分块读 / 控制 0xFFE3），
+     受 BLE 速率限制，状态按 1s 轮询（WiFi 页是 200ms 实时曲线，这里做不了）。 -->
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#121212; color:#eee; font-family:"Microsoft YaHei",system-ui,sans-serif; padding:16px; max-width:520px; margin:0 auto; }
-  h1 { font-size:18px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
-  .badge { font-size:11px; color:#9a9a9a; font-weight:normal; }
-  .conn { display:flex; gap:8px; margin:12px 0; }
-  button { background:#2a2a2a; color:#eee; border:1px solid #444; border-radius:8px; padding:10px 14px; font-size:14px; cursor:pointer; }
-  button:active { background:#3a3a3a; }
-  button.primary { background:#1f5fff; border-color:#1f5fff; }
-  button:disabled { opacity:.4; cursor:not-allowed; }
-  .status-line { font-size:12px; color:#8f8f8f; margin-bottom:12px; min-height:16px; }
-  .card { background:#1e1e1e; border-radius:12px; padding:12px; margin-bottom:12px; }
-  .card h2 { font-size:13px; color:#8f8f8f; margin-bottom:8px; }
-  .big { display:flex; align-items:baseline; gap:10px; }
-  .big .num { font-size:30px; font-weight:bold; }
-  .big .unit { font-size:13px; color:#8f8f8f; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
-  .kv { background:#262626; border-radius:8px; padding:8px 10px; }
-  .kv .k { font-size:11px; color:#8f8f8f; }
-  .kv .v { font-size:16px; margin-top:2px; }
-  .btnrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-  .btnrow button { padding:8px 12px; font-size:13px; }
-  .paused { color:#ffcc00; }
-  form { display:flex; flex-direction:column; gap:8px; }
-  input, select { background:#262626; border:1px solid #444; color:#eee; border-radius:8px; padding:10px; font-size:14px; width:100%; }
-  .hint { font-size:11px; color:#777; margin-top:6px; }
-  .ok { color:#3ddc84; } .err { color:#ff6b6b; }
-  .fan-slider { display:flex; align-items:center; gap:10px; margin-top:8px; }
-  .fan-slider input[type=range] { flex:1; }
+*{box-sizing:border-box}
+body{font-family:sans-serif;margin:0;padding:12px;background:#111;color:#eee;font-size:14px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px}
+.top h1{font-size:18px;margin:0}
+.top-r{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.status-line{font-size:11px;color:#888;margin:0 0 10px;min-height:15px;word-break:break-all}
+.sec{font-size:11px;color:#888}
+button{padding:8px 14px;border:none;border-radius:6px;background:#2a7;color:#fff;cursor:pointer;font-size:13px}
+button:active{opacity:.7}
+button.gray{background:#555}
+button.red{background:#c33}
+button.wide{width:100%}
+.pwrbtn{padding:12px 24px;font-size:16px;font-weight:bold;min-width:120px}
+.pwrbtn.on{background:#2a7}
+.pwrbtn.off{background:#555}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.card{background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:10px}
+.card h3{margin:0 0 8px;font-size:13px;color:#9f9}
+.big{font-size:28px;font-weight:bold;color:#fff}
+.unit{font-size:13px;color:#888;margin-left:4px}
+.row{display:flex;justify-content:space-between;margin:4px 0;font-size:13px}
+.row span:last-child{color:#9cf}
+.btns{display:flex;gap:6px;margin-top:8px}
+.btns button{flex:1;padding:6px;font-size:12px}
+.h2{font-size:14px;color:#9f9;margin:14px 0 6px}
+/* 通道色标：和屏幕 cont_CH_label 方块样式一致
+ *   CH1 黄底 (#FFFF00) + 黑字 + 3px 黄边 + 圆角6
+ *   CH2 青底 (#00FFFF) + 黑字 + 3px 青边 + 圆角6 */
+.ch-chip{display:inline-block;box-sizing:border-box;padding:2px 7px;border-radius:6px;
+  font-weight:bold;font-size:12px;line-height:1.2;margin-right:6px}
+.ch-chip.ch1{background:#FFFF00;color:#000;border:3px solid #FFFF00}
+.ch-chip.ch2{background:#00FFFF;color:#000;border:3px solid #00FFFF}
+/* 负载率渐变进度条：底色 1px 444 边，填充色随数值 绿→黄→红 */
+.drbar{height:12px;border-radius:4px;background:#1a1a1a;border:1px solid #333;overflow:hidden;margin-top:4px}
+.drbar i{display:block;height:100%;border-radius:3px;transition:width .2s linear,background-color .2s linear}
+.w100{width:100%;box-sizing:border-box;margin:4px 0 8px}
+#wifipanel input[type=text],#wifipanel input[type=password]{width:100%;box-sizing:border-box;padding:8px;margin:4px 0;border:1px solid #444;border-radius:6px;background:#222;color:#eee;font-size:13px}
+/* 操作确认弹窗：半透明遮罩淡入 + 背景不可操作（fixed 全屏盖住），确定红/取消绿 */
+#confirmOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center;animation:cfFade .18s ease}
+@keyframes cfFade{from{opacity:0}to{opacity:1}}
+.cfbox{background:#1c1c1c;border:1px solid #444;border-radius:10px;padding:18px 20px;max-width:300px;width:90%;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+.cfbox h4{margin:0 0 8px;font-size:15px;color:#fff}
+.cfbox .cfdesc{font-size:13px;color:#bbb;line-height:1.6;margin-bottom:16px}
+.cfbtns{display:flex;gap:8px;justify-content:flex-end}
 </style>
 </head>
 <body>
-<h1>GSH-750S <span class="badge">Web Bluetooth 控制台</span></h1>
-<div class="status-line" id="status">未连接。需要 Android Chrome / Windows Edge（Web Bluetooth），iPhone Safari 不支持。</div>
+<div class="top">
+  <h1>GSH-750S</h1>
+  <div class="top-r">
+    <span class="sec" id="date">----/--/--</span>
+    <span class="sec" id="tm">--:--:--</span>
+    <button id="btnConnect">连接设备</button>
+    <button class="gray" id="btnDisconnect" disabled>断开</button>
+    <button class="gray" id="wifibt" onclick="toggleProv()">其他设置</button>
+  </div>
+</div>
+<div class="status-line" id="status">未连接。需 Android Chrome / Windows Edge（Web Bluetooth），iPhone Safari 不支持。</div>
 
-<div class="conn">
-  <button class="primary" id="btnConnect">连接设备</button>
-  <button id="btnDisconnect" disabled>断开</button>
+<!-- 其他设置面板：内嵌式，显示/隐藏切换（BLE 支持范围=WiFi 配网；其余设置请在设备 WiFi 网页操作） -->
+<div id="wifipanel" style="display:none;margin-top:12px;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <h3 style="margin:0;color:#9f9">其他设置</h3>
+  </div>
+  <div style="border:1px solid #333;border-radius:6px;padding:10px;background:#171717">
+    <h4 style="margin:0 0 8px;color:#9f9">WiFi 配网（蓝牙下发）</h4>
+    <div class="sec" style="margin-bottom:8px">通过蓝牙把 WiFi 凭据发给设备，设备随后自动连接。电流校准、屏幕亮度等设置请连接设备 WiFi 后在其网页操作。</div>
+    <form id="provForm">
+      <input type="text" id="p_ssid" placeholder="WiFi 名称 (SSID)" required>
+      <input type="password" id="p_pwd" placeholder="密码（留空则复用已保存密码）">
+      <button type="submit" class="wide" style="margin-top:6px">下发并连接</button>
+    </form>
+    <p id="prov_msg" class="sec" style="margin-top:6px"></p>
+  </div>
 </div>
 
 <div id="main" style="display:none">
-  <!-- 概览 -->
+  <!-- 主卡片：电源 + 总功率 + 负载率 + 累计电能/时长 -->
   <div class="card">
-    <h2>概览</h2>
-    <div class="big">
-      <span class="num" id="s_power_w">--.-</span><span class="unit">W</span>
-      <span style="flex:1"></span>
-      <span class="num" id="s_dr" style="font-size:20px">--%</span>
-      <span class="unit">负载</span>
-    </div>
-    <div class="grid2">
-      <div class="kv"><div class="k">累计 Wh</div><div class="v"><span id="s_total_wh">--</span> <span id="s_total_paused" class="paused" style="display:none">[已暂停]</span></div></div>
-      <div class="kv"><div class="k">运行时长</div><div class="v" id="s_run">--:--:--</div></div>
-      <div class="kv"><div class="k">时间</div><div class="v" id="s_time">--:--:--</div></div>
-      <div class="kv"><div class="k">日期</div><div class="v" id="s_date">----/--/--</div></div>
-    </div>
-    <div class="btnrow">
-      <button data-cmd="power:1">电源 ON</button>
-      <button data-cmd="power:0">电源 OFF</button>
-      <button data-cmd="wh:total:reset">总清零</button>
-      <button data-cmd="wh:total:pause">总暂停</button>
-      <button data-cmd="wh:total:resume">总恢复</button>
+    <div class="row"><span>电源开关</span><span id="pstat" class="sec">关闭</span></div>
+    <button id="pwr" class="pwrbtn off wide" onclick="togglePower()">POWER OFF</button>
+    <div class="row" style="margin-top:8px"><span>总功率</span><span><span id="pw" class="big">0.0</span><span class="unit">W</span></span></div>
+    <div class="row"><span>负载率</span><span id="dr">0%</span></div>
+    <div class="drbar"><i id="drbar" style="width:0%;background:#2a7"></i></div>
+    <div class="row"><span>累计电能 <span id="tp" class="sec" style="margin-left:4px"></span></span><span id="tot">0.00 Wh</span></div>
+    <div class="row"><span>运行时长</span><span id="run">00:00:00</span></div>
+    <div class="btns">
+      <button id="totp" class="gray" onclick="whCtrl('total','toggle')">暂停</button>
+      <button class="red" onclick="whCtrl('total','reset')">全局清零</button>
     </div>
   </div>
 
   <!-- CH1 / CH2 -->
-  <div class="card">
-    <h2>CH1 / CH2</h2>
-    <div class="grid2">
-      <div class="kv"><div class="k">CH1 电压/电流/功率</div><div class="v"><span id="s_c1v">--</span>V <span id="s_c1a">--</span>A <span id="s_c1w">--</span>W</div></div>
-      <div class="kv"><div class="k">CH1 Wh</div><div class="v"><span id="s_c1wh">--</span> <span id="s_c1paused" class="paused" style="display:none">[暂停]</span></div></div>
-      <div class="kv"><div class="k">CH1 运行</div><div class="v" id="s_c1rt">--:--:--</div></div>
-      <div class="kv"><div class="k">CH2 电压/电流/功率</div><div class="v"><span id="s_c2v">--</span>V <span id="s_c2a">--</span>A <span id="s_c2w">--</span>W</div></div>
-      <div class="kv"><div class="k">CH2 Wh</div><div class="v"><span id="s_c2wh">--</span> <span id="s_c2paused" class="paused" style="display:none">[暂停]</span></div></div>
-      <div class="kv"><div class="k">CH2 运行</div><div class="v" id="s_c2rt">--:--:--</div></div>
+  <div class="grid">
+    <div class="card">
+      <h3><span class="ch-chip ch1">CH1</span></h3>
+      <div class="row"><span>电压</span><span id="ch1v">0.000 V</span></div>
+      <div class="row"><span>电流</span><span id="ch1a">0.000 A</span></div>
+      <div class="row"><span>功率</span><span id="ch1w">0.0 W</span></div>
+      <div class="row"><span>电能</span><span id="ch1wh">0.00 Wh</span></div>
+      <div class="row"><span>时长</span><span id="ch1t">00:00:00</span></div>
+      <div class="btns">
+        <button id="ch1p" class="gray" onclick="whCtrl(1,'toggle')">暂停</button>
+        <button class="red" onclick="whCtrl(1,'reset')">清零</button>
+      </div>
     </div>
-    <div class="btnrow">
-      <button data-cmd="wh:ch1:reset">CH1 清零</button>
-      <button data-cmd="wh:ch1:pause">CH1 暂停</button>
-      <button data-cmd="wh:ch1:resume">CH1 恢复</button>
-      <button data-cmd="wh:ch2:reset">CH2 清零</button>
-      <button data-cmd="wh:ch2:pause">CH2 暂停</button>
-      <button data-cmd="wh:ch2:resume">CH2 恢复</button>
-    </div>
-  </div>
-
-  <!-- 风扇 -->
-  <div class="card">
-    <h2>风扇</h2>
-    <div class="grid2">
-      <div class="kv"><div class="k">转速</div><div class="v" id="s_rpm">0 RPM</div></div>
-      <div class="kv"><div class="k">占空比</div><div class="v" id="s_duty">0%</div></div>
-      <div class="kv"><div class="k">温度</div><div class="v" id="s_temp">-- °C</div></div>
-      <div class="kv"><div class="k">模式</div><div class="v" id="s_auto">--</div></div>
-    </div>
-    <div class="btnrow">
-      <button data-cmd="fan:run:1">风扇开</button>
-      <button data-cmd="fan:run:0">风扇关</button>
-      <button data-cmd="fan:auto:1">自动温控</button>
-      <button data-cmd="fan:auto:0">手动模式</button>
-    </div>
-    <div class="fan-slider">
-      <span style="font-size:12px;color:#8f8f8f">手动占空比</span>
-      <input type="range" id="fanDuty" min="0" max="100" step="1" value="50" oninput="sendFanDuty(this.value)">
-      <span id="fanDutyVal" style="font-size:13px">50%</span>
+    <div class="card">
+      <h3><span class="ch-chip ch2">CH2</span></h3>
+      <div class="row"><span>电压</span><span id="ch2v">0.000 V</span></div>
+      <div class="row"><span>电流</span><span id="ch2a">0.000 A</span></div>
+      <div class="row"><span>功率</span><span id="ch2w">0.0 W</span></div>
+      <div class="row"><span>电能</span><span id="ch2wh">0.00 Wh</span></div>
+      <div class="row"><span>时长</span><span id="ch2t">00:00:00</span></div>
+      <div class="btns">
+        <button id="ch2p" class="gray" onclick="whCtrl(2,'toggle')">暂停</button>
+        <button class="red" onclick="whCtrl(2,'reset')">清零</button>
+      </div>
     </div>
   </div>
 
-  <!-- 配网 -->
-  <div class="card">
-    <h2>WiFi 配网（通过蓝牙下发，设备随后自动连接）</h2>
-    <form id="provForm">
-      <input type="text" id="p_ssid" placeholder="WiFi 名称 (SSID)" required>
-      <input type="password" id="p_pwd" placeholder="密码（留空则复用已保存密码）">
-      <button type="submit" class="primary">下发并连接</button>
-    </form>
-    <div class="hint">提示：BLE 仅下发凭据，连接过程由设备自行完成，可在 WiFi 网页查看结果。</div>
+  <!-- 风扇监控卡片 -->
+  <div class="card" style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <h3 style="margin:0;color:#9af">风扇控制</h3>
+      <button class="gray" id="fanbt" onclick="toggleFan()">风扇设置</button>
+    </div>
+    <div class="row"><span>启停状态</span><span id="fst"><span class="sec">关闭</span></span></div>
+    <div class="row"><span>模式</span><span id="fmode" class="sec">自动温控</span></div>
+    <div class="row"><span>温度</span><span id="ftmp">35°C</span></div>
+    <div class="row"><span>占空比</span><span><span id="fdty" class="big">0</span><span class="unit">%</span></span></div>
+    <div class="row"><span>转速</span><span><span id="frpm" class="big">00000</span><span class="unit">RPM</span></span></div>
+  </div>
+
+  <!-- 风扇设置内嵌面板 (toggle) — 所有改动先缓存，点"上传参数"才真正写 NVS -->
+  <div id="fanpanel" style="display:none;margin-top:12px;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:12px">
+    <h3 style="margin:0 0 10px;color:#9af">风扇参数设置</h3>
+
+    <div class="row"><span>模式</span>
+      <label><input type="radio" name="fm" id="fm_auto" onchange="fanSetMode(1)"> 自动温控</label>
+      <label><input type="radio" name="fm" id="fm_man"  onchange="fanSetMode(0)"> 手动</label>
+    </div>
+
+    <div id="fanManBlk" style="margin-top:8px;padding:10px;background:#222;border-radius:6px;display:none">
+      <div class="row"><span>手动占空比 (<span id="l_man">60</span>%)</span></div>
+      <input type="range" min="0" max="100" value="60" id="s_man" class="w100"
+             oninput="fanSyncSlider('man',this.value)">
+      <!-- 运行总开关（仅手动模式）：停止=直接断开风扇电源 MOS 绝对停止 -->
+      <div style="margin-top:10px">
+        <button id="fanRunBtn" onclick="fanToggleRun()" style="background:#2a7;min-width:90px;font-weight:bold">开启</button>
+      </div>
+    </div>
+
+    <div id="fanAutoBlk" style="margin-top:8px;padding:10px;background:#222;border-radius:6px">
+      <div class="row"><span>启动温度 T<sub>on</sub> (<span id="l_on">40</span>°C)</span>
+        <input type="number" id="n_on" step="1" min="0" max="120" style="width:80px" oninput="fanSyncInput('on',this.value)"></div>
+      <input type="range" min="0" max="120" value="40" id="s_on" class="w100"
+             oninput="fanSyncSlider('on',this.value)">
+
+      <div class="row" style="margin-top:10px"><span>温控温度 T<sub>lin</sub> (<span id="l_lin">50</span>°C)</span>
+        <input type="number" id="n_lin" step="1" min="0" max="120" style="width:80px" oninput="fanSyncInput('lin',this.value)"></div>
+      <input type="range" min="0" max="120" value="50" id="s_lin" class="w100"
+             oninput="fanSyncSlider('lin',this.value)">
+
+      <div class="row" style="margin-top:10px"><span>满速温度 T<sub>full</sub> (<span id="l_full">70</span>°C)</span>
+        <input type="number" id="n_full" step="1" min="10" max="150" style="width:80px" oninput="fanSyncInput('full',this.value)"></div>
+      <input type="range" min="10" max="150" value="70" id="s_full" class="w100"
+             oninput="fanSyncSlider('full',this.value)">
+
+      <div class="row" style="margin-top:10px"><span>启动迟滞 H<sub>on</sub> (<span id="l_hon">3</span>°C)</span>
+        <input type="number" id="n_hon" step="1" min="0" max="20" style="width:80px" oninput="fanSyncInput('hon',this.value)"></div>
+      <input type="range" min="0" max="20" value="3" id="s_hon" class="w100"
+             oninput="fanSyncSlider('hon',this.value)">
+
+      <div class="row" style="margin-top:10px"><span>关闭迟滞 H<sub>off</sub> (<span id="l_hoff">5</span>°C)</span>
+        <input type="number" id="n_hoff" step="1" min="0" max="20" style="width:80px" oninput="fanSyncInput('hoff',this.value)"></div>
+      <input type="range" min="0" max="20" value="5" id="s_hoff" class="w100"
+             oninput="fanSyncSlider('hoff',this.value)">
+
+      <div class="row" style="margin-top:10px"><span>最小占空比 (<span id="l_dmin">35</span>%)</span>
+        <input type="number" id="n_dmin" step="1" min="0" max="100" style="width:80px" oninput="fanSyncInput('dmin',this.value)"></div>
+      <input type="range" min="0" max="100" value="35" id="s_dmin" class="w100"
+             oninput="fanSyncSlider('dmin',this.value)">
+
+      <div class="row" style="margin-top:10px"><span>最大占空比 (<span id="l_dmax">100</span>%)</span>
+        <input type="number" id="n_dmax" step="1" min="0" max="100" style="width:80px" oninput="fanSyncInput('dmax',this.value)"></div>
+      <input type="range" min="0" max="100" value="100" id="s_dmax" class="w100"
+             oninput="fanSyncSlider('dmax',this.value)">
+
+      <!-- 锁定 + 上传参数：跟随自动温控区，锁保护温度参数防误触 -->
+      <div style="display:flex;gap:6px;align-items:center;margin-top:14px">
+        <button id="fanLockBtn" onclick="fanToggleLock()" title="点击解锁后可修改参数" style="background:#c33;min-width:96px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 已锁定</button>
+        <button id="fanSaveBtn" class="" onclick="fanSaveAll()" style="background:#2a7">上传参数</button>
+      </div>
+      <!-- 上传反馈消息条：成功/失败持久显示 5 秒，避免一闪而过看不清 -->
+      <div id="fan_msg" style="display:none;margin-top:10px;padding:8px 10px;border-radius:6px;font-size:13px"></div>
+
+      <div style="margin-top:10px;color:#888;font-size:12px">
+        说明：T<sub>on</sub> 以下关风扇，温度升到 T<sub>on</sub>+H<sub>on</sub> 开；
+        启动后 T<sub>on</sub>~T<sub>lin</sub> 保持最低占空比运行，
+        T<sub>lin</sub>~T<sub>full</sub> 线性升速到满速；
+        运行中温度降到 T<sub>on</sub>-H<sub>off</sub> 才关（防抖动）。
+        <span style="color:#fa1">参数改动须点「上传参数」写入设备；上传后风扇停止，需手动开启。</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 操作确认弹窗：清零/暂停等危险操作需二次确认（半透明遮罩淡入，背景不可操作） -->
+<div id="confirmOverlay">
+  <div class="cfbox">
+    <h4 id="cf_title"></h4>
+    <div class="cfdesc" id="cf_desc"></div>
+    <div class="cfbtns">
+      <button id="cf_ok" onclick="cfOk()">确定</button>
+      <button id="cf_cancel" class="gray" onclick="cfClose()" style="background:#2a7">取消</button>
+    </div>
   </div>
 </div>
 
 <script>
-let device = null;
-let service = null;
-let provChar = null, stateChar = null, ctlChar = null;
-let pollTimer = null;
+const $=id=>document.getElementById(id);
+let device=null, service=null, provChar=null, stateChar=null, ctlChar=null, pollTimer=null;
 
-const $ = id => document.getElementById(id);
-
-/* ---------- 分块读取状态（设备端协议：0xAA 起始 / 0xBB 续 / 0xFF 结束） ---------- */
-async function readState() {
-  const parts = [];
-  let guard = 0;
-  for (;;) {
-    const dv = await stateChar.readValue();
-    const head = dv.getUint8(0);
-    if (head === 0xFF) break;
-    if (head === 0xAA && parts.length > 0) parts.length = 0; // 异常时新帧重置
-    for (let i = 1; i < dv.byteLength; i++) parts.push(dv.getUint8(i));
-    if (++guard > 300) { console.warn("state read guard hit"); break; }
+/* ---------- 数值格式化（与设备 WiFi 网页一致） ---------- */
+function fv(v){
+  if(v<0)v=0;              /* 不允许显示负值 */
+  if(v<10)return v.toFixed(3);
+  if(v<100)return v.toFixed(2);
+  if(v<1000)return v.toFixed(1);
+  return v.toFixed(0);
+}
+function fwh(v){ if(v<0)v=0; return v.toFixed(2)+' Wh'; }
+/* 负载率渐变颜色：0~100 正常（绿→黄），100~150 过载（黄→红）
+ * 输入 dr = 百分比，可能 > 100（过载区）。连续插值，升/降完全对称（线性）。 */
+function drColor(dr){
+  let r1=0x22,g1=0xAA,b1=0x77;    // 0%
+  let ry=0xFF,gy=0xAA,by=0x11;    // 100%
+  let re=0xEE,ge=0x33,be=0x33;    // 150%
+  let r,g,b,t;
+  if(dr<=100){ t=Math.max(0,Math.min(1,dr/100));
+    r=Math.round(r1+(ry-r1)*t); g=Math.round(g1+(gy-g1)*t); b=Math.round(b1+(by-b1)*t);
+  } else { t=Math.max(0,Math.min(1,(dr-100)/50));
+    r=Math.round(ry+(re-ry)*t); g=Math.round(gy+(ge-gy)*t); b=Math.round(by+(be-by)*t);
   }
-  const text = new TextDecoder().decode(new Uint8Array(parts));
+  const hx=v=>(v<16?'0':'')+v.toString(16);
+  return '#'+hx(r)+hx(g)+hx(b);
+}
+
+/* ---------- 状态读取：分块协议（设备端 0xAA 起始 / 0xBB 续 / 0xFF 结束） ---------- */
+async function readState(){
+  const parts=[];
+  let guard=0;
+  for(;;){
+    const dv=await stateChar.readValue();
+    const head=dv.getUint8(0);
+    if(head===0xFF) break;
+    if(head===0xAA && parts.length>0) parts.length=0; // 异常时新帧重置
+    for(let i=1;i<dv.byteLength;i++) parts.push(dv.getUint8(i));
+    if(++guard>300){ console.warn('state read guard hit'); break; }
+  }
+  // 去掉末尾 0x00 填充（设备最后一帧不足 19 字节时用 0 补齐，否则 JSON.parse 报错）
+  while(parts.length && parts[parts.length-1]===0) parts.pop();
+  const text=new TextDecoder().decode(new Uint8Array(parts));
   return JSON.parse(text);
 }
 
-function renderState(s) {
-  $("s_power_w").textContent = s.power_w.toFixed(1);
-  $("s_dr").textContent = Math.round(s.dr) + "%";
-  $("s_total_wh").textContent = s.total_wh.toFixed(3);
-  $("s_total_paused").style.display = s.total_paused ? "" : "none";
-  $("s_run").textContent = s.run;
-  $("s_time").textContent = s.time;
-  $("s_date").textContent = s.date;
+/* ---------- 渲染（结构/逻辑与设备网页 loadState 一致） ---------- */
+let whPaused={total:0,1:0,2:0};   /* 各表当前暂停状态（renderState 同步），用于判断暂停/继续 */
+let fanDirty=false;               /* true=用户有未保存的改动，renderState 时不回填覆盖 */
+let pendingCfg={};                /* 待提交的脏参数 dict：{auto, duty_manual, t_on_x10, ...} */
+let fanLocked=true;               /* 默认锁定：防止误触，解锁后才能改参数/保存 */
+let fanRunState=0;                /* 风扇运行总开关状态，renderState 同步 */
 
-  $("s_c1v").textContent = s.ch1.v.toFixed(2);
-  $("s_c1a").textContent = s.ch1.a.toFixed(3);
-  $("s_c1w").textContent = s.ch1.w.toFixed(2);
-  $("s_c1wh").textContent = s.ch1.wh.toFixed(3);
-  $("s_c1paused").style.display = s.ch1.paused ? "" : "none";
-  $("s_c1rt").textContent = s.ch1.rt;
-  $("s_c2v").textContent = s.ch2.v.toFixed(2);
-  $("s_c2a").textContent = s.ch2.a.toFixed(3);
-  $("s_c2w").textContent = s.ch2.w.toFixed(2);
-  $("s_c2wh").textContent = s.ch2.wh.toFixed(3);
-  $("s_c2paused").style.display = s.ch2.paused ? "" : "none";
-  $("s_c2rt").textContent = s.ch2.rt;
+function renderState(s){
+  $('date').textContent=s.date;
+  $('tm').textContent=s.time;
+  const on=s.power_on;
+  const b=$('pwr');
+  b.className='pwrbtn '+(on?'on':'off')+' wide';
+  b.textContent=on?'POWER ON':'POWER OFF';
+  $('pstat').textContent=on?'ON':'OFF';
+  $('pw').textContent=fv(s.power_w);
+  $('dr').textContent=s.dr+'%';
+  /* 负载率进度条：显示宽度 0~100%，>100% 时到顶；颜色渐变用真实 dr (保留 >100 变红) */
+  const pctShow=Math.max(0,Math.min(100,s.dr));
+  const drb=$('drbar');
+  drb.style.width=pctShow.toFixed(0)+'%';
+  drb.style.backgroundColor=drColor(s.dr);
+  $('tot').textContent=fwh(s.total_wh);
+  $('run').textContent=s.run;
+  /* V/A/W 实时量：INA226 掉线(valid=0)时显示占位符，避免误判 */
+  const cell=(id,ok,v,unit)=>{$(id).textContent=ok?fv(v)+' '+unit:'-.---';};
+  cell('ch1v',s.ch1.valid,s.ch1.v,'V');
+  cell('ch1a',s.ch1.valid,s.ch1.a,'A');
+  cell('ch1w',s.ch1.valid,s.ch1.w,'W');
+  $('ch1wh').textContent=fwh(s.ch1.wh);
+  $('ch1t').textContent=s.ch1.rt;
+  cell('ch2v',s.ch2.valid,s.ch2.v,'V');
+  cell('ch2a',s.ch2.valid,s.ch2.a,'A');
+  cell('ch2w',s.ch2.valid,s.ch2.w,'W');
+  $('ch2wh').textContent=fwh(s.ch2.wh);
+  $('ch2t').textContent=s.ch2.rt;
+  const b1=$('ch1p'); b1.textContent=s.ch1.paused?'继续':'暂停'; b1.className=s.ch1.paused?'':'gray';
+  const b2=$('ch2p'); b2.textContent=s.ch2.paused?'继续':'暂停'; b2.className=s.ch2.paused?'':'gray';
+  /* 总累计/运行时长暂停状态 */
+  const tp=$('tp'); if(tp)tp.textContent=s.total_paused?'[已暂停]':'';
+  const bp=$('totp'); if(bp){bp.textContent=s.total_paused?'继续':'暂停';bp.className=s.total_paused?'':'gray';}
+  /* 同步暂停状态到本地，供确认弹窗判断点击「暂停」还是「继续」 */
+  whPaused.total=s.total_paused?1:0;
+  whPaused[1]=s.ch1.paused?1:0;
+  whPaused[2]=s.ch2.paused?1:0;
 
-  $("s_rpm").textContent = s.fan.rpm + " RPM";
-  $("s_duty").textContent = s.fan.duty + "%";
-  $("s_temp").textContent = s.fan.temp + " °C";
-  $("s_auto").textContent = s.fan.auto ? "自动温控" : "手动 " + s.fan.duty_manual + "%";
+  /* 风扇监控卡片 — 温度整数，不带小数 */
+  const f=s.fan;
+  $('fst').innerHTML=f.en?'<span style="color:#2e8">运行中</span>':'<span class="sec">关闭</span>';
+  $('fmode').textContent=f.auto?'自动温控':'手动';
+  $('ftmp').textContent=(+f.temp).toFixed(0)+'°C';
+  $('fdty').textContent=f.duty;
+  let r=String(f.rpm); while(r.length<5)r='0'+r;  /* 恒定 5 位数 00000 */
+  $('frpm').textContent=r;
+
+  /* 风扇运行开关按钮（仅手动模式区）：跟随设备总开关状态 */
+  fanRunState=(+f.run)?1:0;
+  const rb=$('fanRunBtn');
+  if(rb){ rb.textContent=fanRunState?'停止':'开启'; rb.style.background=fanRunState?'#c33':'#2a7'; }
+
+  /* 风扇设置面板：展开状态时才回填；如果用户正在编辑 (fanDirty)，不回填避免覆盖 */
+  if($('fanpanel').style.display==='block' && !fanDirty){
+    fanFillPanelCfg(f);
+  }
 }
 
-async function poll() {
-  if (!stateChar) return;
-  try {
-    const s = await readState();
+async function poll(){
+  if(!stateChar) return;
+  try{
+    const s=await readState();
     renderState(s);
-  } catch (e) {
-    console.warn("poll error", e);
-  }
+  }catch(e){ console.warn('poll error',e); }
 }
 
-/* ---------- 控制 ---------- */
-async function writeCmd(cmd) {
-  if (!ctlChar) return;
-  try {
+/* ---------- BLE 控制通道 ---------- */
+function setStatus(t){ $('status').textContent=t; }
+/* 返回 true=写入成功 / false=失败（供"上传参数"区分成败反馈） */
+async function writeCmd(cmd, quiet){
+  if(!ctlChar){ setStatus('未连接，请先连接设备'); return false; }
+  try{
     await ctlChar.writeValue(new TextEncoder().encode(cmd));
-    $("status").textContent = "已发送: " + cmd;
-  } catch (e) {
-    $("status").textContent = "发送失败: " + e.message;
+    if(!quiet) setStatus('已发送: '+cmd);
+    setTimeout(poll,400);   /* 设备处理完再拉最新状态 */
+    return true;
+  }catch(e){
+    setStatus('发送失败: '+e.message);
+    return false;
   }
-  setTimeout(poll, 400); // 设备处理完再拉最新状态
 }
 
-function sendFanDuty(v) {
-  $("fanDutyVal").textContent = v + "%";
-  writeCmd("fan:duty:" + v);
+/* ---------- 电源 ---------- */
+function togglePower(){
+  const cur=$('pwr').classList.contains('on');
+  writeCmd('power:'+(cur?0:1));
 }
 
-/* ---------- 连接 ---------- */
-async function connect() {
-  if (!navigator.bluetooth) {
-    $("status").textContent = "此浏览器不支持 Web Bluetooth，请用 Android Chrome / Windows Edge。";
+/* ---- 操作确认弹窗：清零/暂停前二次确认，防止误触 ----
+ * 清零/暂停为破坏性/影响性操作 → 先弹窗；「继续/恢复累计」无风险，直接执行不弹窗。 */
+let cfAction=null;
+function cfShow(title,desc,onOk){
+  $('cf_title').textContent=title;
+  $('cf_desc').textContent=desc;
+  cfAction=onOk;
+  $('confirmOverlay').style.display='flex';
+}
+function cfClose(){ $('confirmOverlay').style.display='none'; cfAction=null; }
+function cfOk(){ const f=cfAction; cfClose(); if(f) f(); }
+function whCtrl(ch,act){
+  if(act==='reset'){
+    const nm=(ch==='total')?'全局累计':('CH'+ch);
+    cfShow('确认清零？', nm+' 的累计电能(Wh)与运行时长将全部归零，且不可恢复。确定要继续吗？',
+      ()=>sendWh(ch,'reset'));
+  } else if(act==='toggle'){
+    if(!whPaused[ch]){
+      const nm=(ch==='total')?'全局累计':('CH'+ch);
+      cfShow('确认暂停？', nm+' 将停止累计电能与运行时长，读数保持定格；点击「继续」可恢复累计。',
+        ()=>sendWh(ch,'toggle'));
+    } else {
+      sendWh(ch,'toggle');
+    }
+  }
+}
+function sendWh(ch,act){
+  /* 通道名映射：设备端协议是 wh:ch1 / wh:ch2（不是 wh:1 / wh:2） */
+  const nm=(ch==='total')?'total':('ch'+ch);
+  /* BLE 用显式 pause/resume（不依赖设备端 toggle 语义，页面状态为准） */
+  writeCmd('wh:'+nm+':'+(act==='reset'?'reset':(whPaused[ch]?'resume':'pause')));
+}
+
+/* ---------- 风扇：运行开关 / 模式 / 手动占空比 ---------- */
+function fanToggleRun(){ writeCmd('fan:run:'+(fanRunState?0:1)); }
+function toggleFan(){
+  const p=$('fanpanel'); const show=(p.style.display==='none'||!p.style.display);
+  p.style.display=show?'block':'none';
+  $('fanbt').innerHTML=show?'收起':'风扇设置';
+  if(show){
+    fanSetLocked(true);   /* 每次打开默认锁定 */
+    poll();               /* 打开即回填当前配置 */
+  }
+}
+
+/* ---- 风扇设置面板：整数°C + 缓存防误触（点"上传参数"才真正写入） ---- */
+const LOCK_ON_SVG ='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const LOCK_OFF_SVG='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2.1"/></svg>';
+function clampInt(v,lo,hi){ v=parseInt(v,10); if(isNaN(v))v=lo; return Math.max(lo,Math.min(hi,v)); }
+/* 锁定/解锁：锁只保护"温度曲线/占空比上下限"等参数设置（防误触）。
+ * 模式切换、手动占空比、上传参数、运行开关 不受锁限制（属于日常操作）。 */
+function fanSetLocked(locked){
+  fanLocked=locked;
+  const ids=['s_on','n_on','s_lin','n_lin','s_full','n_full',
+             's_hon','n_hon','s_hoff','n_hoff',
+             's_dmin','n_dmin','s_dmax','n_dmax'];
+  for(const id of ids){ const el=$(id); if(el) el.disabled=locked; }
+  const b=$('fanLockBtn');
+  if(b){
+    b.style.background=locked?'#c33':'#2a7';
+    b.innerHTML=locked?(LOCK_ON_SVG+' 已锁定'):(LOCK_OFF_SVG+' 已解锁');
+    b.title=locked?'点击解锁后可修改参数':'点击锁定，禁止修改参数';
+  }
+  if(locked) fanDirty=false;  /* 锁定时丢弃未保存改动，防止解锁后误存旧值 */
+}
+function fanToggleLock(){ fanSetLocked(!fanLocked); }
+/* 把状态 JSON 里的风扇配置填到面板控件上（状态字段全部为整数 °C / %） */
+function fanFillPanelCfg(c){
+  /* 模式 radio */
+  $('fm_auto').checked=!!c.auto;
+  $('fm_man' ).checked=!c.auto;
+  $('fanManBlk' ).style.display=c.auto?'none':'block';
+  $('fanAutoBlk').style.display=c.auto?'block':'none';
+  /* 手动滑块 + label */
+  $('s_man').value=c.duty_manual; $('l_man').textContent=c.duty_manual;
+  /* T_on / T_lin / T_full / Hyst — 全部整数 °C */
+  $('s_on'  ).value=c.t_on;   $('l_on'  ).textContent=c.t_on;   $('n_on'  ).value=c.t_on;
+  $('s_lin' ).value=c.t_lin;  $('l_lin' ).textContent=c.t_lin;  $('n_lin' ).value=c.t_lin;
+  $('s_full').value=c.t_full; $('l_full').textContent=c.t_full; $('n_full').value=c.t_full;
+  $('s_hon' ).value=c.hyst_on;  $('l_hon' ).textContent=c.hyst_on;  $('n_hon' ).value=c.hyst_on;
+  $('s_hoff').value=c.hyst_off; $('l_hoff').textContent=c.hyst_off; $('n_hoff').value=c.hyst_off;
+  /* duty min/max */
+  $('s_dmin').value=c.duty_min; $('l_dmin').textContent=c.duty_min; $('n_dmin').value=c.duty_min;
+  $('s_dmax').value=c.duty_max; $('l_dmax').textContent=c.duty_max; $('n_dmax').value=c.duty_max;
+  /* 清掉进入面板前的脏数据 */
+  pendingCfg={};
+  fanDirty=false;
+  $('fanSaveBtn').style.background='#2a7';$('fanSaveBtn').textContent='上传参数';
+}
+/* 滑块移动 → 同步 label + 输入框 + pendingCfg (温度 *10 存到 x10)
+ * 手动模式占空比拖动即实时下发（仅内存，不写 NVS） */
+function fanSyncSlider(which,v){
+  v=+v; fanDirty=true;
+  if(which==='man' ){
+    $('l_man').textContent=v; pendingCfg.duty_manual=clampInt(v,0,100);
+    if(!$('fm_auto').checked){   /* 手动模式 → 实时下发（运行中立即变速，停止时更新内存值，点开启即生效） */
+      writeCmd('fan:duty:'+clampInt(v,0,100), true);
+    }
+  }
+  if(which==='on'  ){ v=clampInt(v,0,120);  $('l_on'  ).textContent=v; $('n_on'  ).value=v; pendingCfg.t_on_x10   =v*10; }
+  if(which==='lin' ){ v=clampInt(v,0,120);  $('l_lin' ).textContent=v; $('n_lin' ).value=v; pendingCfg.t_lin_x10  =v*10; }
+  if(which==='full'){ v=clampInt(v,10,150); $('l_full').textContent=v; $('n_full').value=v; pendingCfg.t_full_x10 =v*10; }
+  if(which==='hon' ){ v=clampInt(v,0,20);   $('l_hon' ).textContent=v; $('n_hon' ).value=v; pendingCfg.hyst_on_x10=v*10; }
+  if(which==='hoff'){ v=clampInt(v,0,20);   $('l_hoff').textContent=v; $('n_hoff').value=v; pendingCfg.hyst_off_x10=v*10; }
+  if(which==='dmin'){ v=clampInt(v,0,100);  $('l_dmin').textContent=v; $('n_dmin').value=v; pendingCfg.duty_min    =v; }
+  if(which==='dmax'){ v=clampInt(v,0,100);  $('l_dmax').textContent=v; $('n_dmax').value=v; pendingCfg.duty_max    =v; }
+}
+/* 数字输入框输入 → 反向同步滑块 + label + pendingCfg */
+function fanSyncInput(which,v){
+  v=parseInt(v,10); if(isNaN(v))return; fanDirty=true;
+  if(which==='on'  ){ v=clampInt(v,0,120);  $('s_on'  ).value=v; $('l_on'  ).textContent=v; pendingCfg.t_on_x10   =v*10; }
+  if(which==='lin' ){ v=clampInt(v,0,120);  $('s_lin' ).value=v; $('l_lin' ).textContent=v; pendingCfg.t_lin_x10  =v*10; }
+  if(which==='full'){ v=clampInt(v,10,150); $('s_full').value=v; $('l_full').textContent=v; pendingCfg.t_full_x10 =v*10; }
+  if(which==='hon' ){ v=clampInt(v,0,20);   $('s_hon' ).value=v; $('l_hon' ).textContent=v; pendingCfg.hyst_on_x10=v*10; }
+  if(which==='hoff'){ v=clampInt(v,0,20);   $('s_hoff').value=v; $('l_hoff').textContent=v; pendingCfg.hyst_off_x10=v*10; }
+  if(which==='dmin'){ v=clampInt(v,0,100);  $('s_dmin').value=v; $('l_dmin').textContent=v; pendingCfg.duty_min    =v; }
+  if(which==='dmax'){ v=clampInt(v,0,100);  $('s_dmax').value=v; $('l_dmax').textContent=v; pendingCfg.duty_max    =v; }
+}
+/* 模式单选切换 — 立即切换面板分区 + 实时下发模式到设备（不依赖上传） */
+function fanSetMode(auto){
+  auto=(auto===1||auto==='1'||auto===true);
+  $('fanManBlk' ).style.display=auto?'none':'block';
+  $('fanAutoBlk').style.display=auto?'block':'none';
+  pendingCfg.auto=auto?1:0;
+  fanDirty=true;
+  writeCmd('fan:auto:'+(auto?1:0), true);   /* 模式切换实时生效（不停风扇） */
+}
+/* 点击「上传参数」：把 pendingCfg 里所有字段一次经 BLE 下发 fan:cfg 命令。
+ * 反馈设计：按钮显示"上传中…"，结果写入 fan_msg 消息条（成功绿/失败红），持续 5 秒自动收起。 */
+function fanMsg(text,ok){
+  const el=$('fan_msg');
+  el.style.display='block';
+  el.textContent=text;
+  el.style.color= ok===true?'#6f6' : (ok===false?'#f66':'#ccc');
+  el.style.background= ok===true?'rgba(40,180,80,.18)' : (ok===false?'rgba(220,60,60,.18)':'rgba(120,120,120,.15)');
+  el.style.border='1px solid '+(ok===true?'#2a5':(ok===false?'#c44':'#555'));
+  clearTimeout(fanMsg._t);
+  fanMsg._t=setTimeout(()=>{el.style.display='none';el.textContent='';},5000);
+}
+async function fanSaveAll(){
+  const p=pendingCfg;
+  const parts=[];
+  if(p.auto!==undefined)       parts.push('auto='+(p.auto?1:0));
+  if(p.duty_manual!==undefined)parts.push('man='+p.duty_manual);
+  if(p.t_on_x10!==undefined)   parts.push('on='+(p.t_on_x10/10));
+  if(p.t_lin_x10!==undefined)  parts.push('lin='+(p.t_lin_x10/10));
+  if(p.t_full_x10!==undefined) parts.push('full='+(p.t_full_x10/10));
+  if(p.hyst_on_x10!==undefined)parts.push('hon='+(p.hyst_on_x10/10));
+  if(p.hyst_off_x10!==undefined)parts.push('hoff='+(p.hyst_off_x10/10));
+  if(p.duty_min!==undefined)   parts.push('dmin='+p.duty_min);
+  if(p.duty_max!==undefined)   parts.push('dmax='+p.duty_max);
+  if(parts.length===0){ fanMsg('没有可上传的改动',false); return; }
+  const btn=$('fanSaveBtn');
+  btn.textContent='上传中…'; btn.style.background='#27a';
+  fanMsg('正在上传参数…',null);
+  const ok=await writeCmd('fan:cfg:'+parts.join('&'), true);
+  btn.textContent='上传参数'; btn.style.background='#2a7';
+  if(ok){
+    pendingCfg={}; fanDirty=false;
+    fanMsg('✓ 上传成功：参数已写入设备并立即生效',true);
+    setTimeout(poll,500);   /* 下一轮状态回填设备实际生效值（fanDirty=false 才回填） */
+  }else{
+    fanMsg('✗ 发送失败：设备未连接或写入出错',false);
+  }
+}
+
+/* ---------- 其他设置面板（内嵌式切换，仅配网） ---------- */
+function toggleProv(){
+  const wp=$('wifipanel');
+  const show=(wp.style.display==='none'||!wp.style.display);
+  wp.style.display=show?'block':'none';
+  $('wifibt').innerHTML=show?'收起':'其他设置';
+}
+
+/* ---------- 连接 / 断开 ---------- */
+async function connect(){
+  if(!navigator.bluetooth){
+    setStatus('此浏览器不支持 Web Bluetooth，请用 Android Chrome / Windows Edge。');
     return;
   }
-  try {
-    $("status").textContent = "正在搜索设备 gsh-750s…";
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: "gsh-750s" }],
-      optionalServices: [0xFFE0]
+  try{
+    setStatus('正在搜索设备 gsh-750s…');
+    device=await navigator.bluetooth.requestDevice({
+      filters:[{name:'gsh-750s'}],
+      optionalServices:[0xFFE0]
     });
-    device.addEventListener("gattserverdisconnected", onDisconnected);
-    $("status").textContent = "已找到，正在连接…";
-    const server = await device.gatt.connect();
-    service = await server.getPrimaryService(0xFFE0);
-    provChar  = await service.getCharacteristic(0xFFE1);
-    stateChar = await service.getCharacteristic(0xFFE2);
-    ctlChar   = await service.getCharacteristic(0xFFE3);
-    $("main").style.display = "";
-    $("btnDisconnect").disabled = false;
-    $("btnConnect").disabled = true;
-    $("status").textContent = "已连接: " + (device.name || "gsh-750s");
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    setStatus('已找到，正在连接…');
+    const server=await device.gatt.connect();
+    service=await server.getPrimaryService(0xFFE0);
+    provChar =await service.getCharacteristic(0xFFE1);
+    stateChar=await service.getCharacteristic(0xFFE2);
+    ctlChar  =await service.getCharacteristic(0xFFE3);
+    $('main').style.display='';
+    $('btnDisconnect').disabled=false;
+    $('btnConnect').disabled=true;
+    setStatus('已连接: '+(device.name||'gsh-750s'));
     await poll();
-    pollTimer = setInterval(poll, 1000);
-  } catch (e) {
-    $("status").textContent = "连接失败: " + e.message;
+    pollTimer=setInterval(poll,1000);
+  }catch(e){
+    setStatus('连接失败: '+e.message);
   }
 }
-
-function onDisconnected() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  $("main").style.display = "none";
-  $("btnDisconnect").disabled = true;
-  $("btnConnect").disabled = false;
-  $("status").textContent = "已断开连接";
+function onDisconnected(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
+  $('main').style.display='none';
+  $('btnDisconnect').disabled=true;
+  $('btnConnect').disabled=false;
+  setStatus('已断开连接');
 }
-
-async function disconnect() {
-  if (device && device.gatt.connected) device.gatt.disconnect();
+async function disconnect(){
+  if(device && device.gatt.connected) device.gatt.disconnect();
   else onDisconnected();
 }
 
-/* ---------- 配网 ---------- */
-$("provForm").addEventListener("submit", async ev => {
+/* ---------- 配网（BLE 下发，设备自行连接） ---------- */
+$('provForm').addEventListener('submit', async ev=>{
   ev.preventDefault();
-  if (!provChar) return;
-  const ssid = $("p_ssid").value.trim();
-  if (!ssid) return;
-  const pwd = $("p_pwd").value;
-  try {
-    await provChar.writeValue(new TextEncoder().encode(ssid + "|" + pwd));
-    $("status").textContent = "已下发 WiFi 凭据，设备开始连接…（稍后可打开 http://gsh-750s.local 查看）";
-  } catch (e) {
-    $("status").textContent = "配网失败: " + e.message;
+  if(!provChar){ setStatus('未连接，请先连接设备'); return; }
+  const ssid=$('p_ssid').value.trim();
+  if(!ssid) return;
+  const pwd=$('p_pwd').value;
+  try{
+    await provChar.writeValue(new TextEncoder().encode(ssid+'|'+pwd));
+    setStatus('已下发 WiFi 凭据，设备开始连接…');
+    $('prov_msg').textContent='已下发：'+ssid+'，设备正在连接…（可稍后连接设备 WiFi 查看结果）';
+  }catch(e){
+    setStatus('配网失败: '+e.message);
+    $('prov_msg').textContent='失败: '+e.message;
   }
 });
 
 /* ---------- 事件绑定 ---------- */
-$("btnConnect").addEventListener("click", connect);
-$("btnDisconnect").addEventListener("click", disconnect);
-document.querySelectorAll("[data-cmd]").forEach(btn => {
-  btn.addEventListener("click", () => writeCmd(btn.dataset.cmd));
-});
+$('btnConnect').addEventListener('click',connect);
+$('btnDisconnect').addEventListener('click',disconnect);
 </script>
 </body>
 </html>
