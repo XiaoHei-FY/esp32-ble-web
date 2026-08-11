@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GSH-750S 电源监控（蓝牙）</title>
+<title>GSH-750S 电源监控</title>
 <!-- Web Bluetooth 宿主页：界面与设备 WiFi 仪表盘一致（顶栏 + 左侧设置菜单 + 主内容区切换）。
      数据经 BLE GATT 传输（配网 0xFFE1 / 状态 0xFFE2 分块读 / 控制 0xFFE3 / OTA 0xFFE4），
      受 BLE 速率限制，状态按 1s 轮询（WiFi 页是 200ms，这里做不了）。 -->
@@ -72,12 +72,16 @@ button.wide{width:100%}
   .smenu{position:fixed;top:0;left:0;bottom:0;z-index:300;width:170px;border-radius:0;box-shadow:4px 0 24px rgba(0,0,0,.6)}
   body.menu-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200}
 }
-/* 未连接时的配对引导卡片 */
-#pairCard{max-width:430px;margin:44px auto;background:#1c1c1c;border:1px solid #333;border-radius:12px;padding:32px 24px;text-align:center}
-#pairCard .pico{font-size:36px;line-height:1;margin-bottom:12px}
-#pairCard h2{margin:0 0 8px;font-size:19px;color:#9f9}
-#pairCard p{font-size:13px;color:#bbb;line-height:1.7;margin:0 0 18px}
-#btnConnect{padding:12px 30px;font-size:16px;font-weight:bold}
+/* 未连接时的配对引导卡片：圆环图标 + 特性列表 + 主色按钮，与整体深色风格统一 */
+#pairCard{max-width:420px;margin:40px auto;background:linear-gradient(180deg,#1e1e1e,#191919);border:1px solid #333;border-radius:14px;padding:36px 28px 28px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+#pairCard .pico{width:64px;height:64px;margin:0 auto 16px;background:#111;border:1px solid #2a7;border-radius:50%;display:flex;align-items:center;justify-content:center}
+#pairCard h2{margin:0 0 6px;font-size:20px;color:#fff}
+#pairCard .sub{font-size:12px;color:#888;margin:0 0 20px}
+#pairCard .feat{display:flex;flex-direction:column;text-align:left;margin:0 0 24px}
+#pairCard .feat div{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;font-size:13px;color:#ccc}
+#pairCard .feat div:hover{background:#222}
+#pairCard .feat .dot{width:6px;height:6px;border-radius:50%;background:#2a7;flex-shrink:0}
+#btnConnect{padding:13px 34px;font-size:16px;font-weight:bold;width:100%;box-shadow:0 4px 14px rgba(42,119,80,.35)}
 </style>
 </head>
 <body>
@@ -92,17 +96,25 @@ button.wide{width:100%}
 
 <!-- 未连接：配对引导卡片（点击"连接设备"走 Web Bluetooth 配对） -->
 <div id="pairCard">
-  <div class="pico">🔗</div>
+  <div class="pico">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#2a7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10-5 4V3l5 4L7 17"/></svg>
+  </div>
   <h2>GSH-750S 蓝牙控制</h2>
-  <p>通过 Web Bluetooth 与设备配对后，即可查看电源数据、控制 CH1/CH2 与风扇、校准电流、下发 WiFi 配网等。</p>
+  <p class="sub">与设备配对后，即可无线管理电源监控</p>
+  <div class="feat">
+    <div><span class="dot"></span>总功率 / CH1 / CH2 实时监控</div>
+    <div><span class="dot"></span>CH 开关、累计电能与清零</div>
+    <div><span class="dot"></span>风扇自动温控、屏幕亮度调节</div>
+    <div><span class="dot"></span>WiFi 配网与固件升级</div>
+  </div>
   <button id="btnConnect">连接设备</button>
   <div class="sec" style="margin-top:12px">需 Android Chrome / Windows Edge；iPhone Safari 不支持 Web Bluetooth。</div>
 </div>
 
 <!-- 已连接：顶栏 + 左侧设置菜单 + 主内容区切换 -->
 <div id="app" class="set-layout" style="display:none">
-  <aside id="smenu" class="smenu">
-    <div class="smenu-head"><span>设置</span><button onclick="toggleMenu()">✕</button></div>
+  <aside id="smenu" class="smenu" style="display:none">
+    <div class="smenu-head"><span>设置</span><button onclick="toggleMenu()">收起</button></div>
     <button class="sitem active" data-page="pg-mon"  onclick="showPage('pg-mon')">主监控</button>
     <button class="sitem" data-page="pg-fan"  onclick="showPage('pg-fan')">风扇设置</button>
     <button class="sitem" data-page="pg-cal"  onclick="showPage('pg-cal')">电流校准</button>
@@ -157,16 +169,13 @@ button.wide{width:100%}
         </div>
       </div>
 
-      <!-- 风扇监控卡片（点击"风扇设置"跳到左侧菜单中的风扇设置页） -->
+      <!-- 风扇状态卡片：简易显示温度/转速，详细控制移入"风扇设置"页 -->
       <div class="card" style="margin-top:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-          <h3 style="margin:0;color:#9af">风扇控制</h3>
+          <h3 style="margin:0;color:#9af">风扇状态</h3>
           <button class="gray" onclick="showPage('pg-fan')">风扇设置</button>
         </div>
-        <div class="row"><span>启停状态</span><span id="fst"><span class="sec">关闭</span></span></div>
-        <div class="row"><span>模式</span><span id="fmode" class="sec">自动温控</span></div>
         <div class="row"><span>温度</span><span id="ftmp">35°C</span></div>
-        <div class="row"><span>占空比</span><span><span id="fdty" class="big">0</span><span class="unit">%</span></span></div>
         <div class="row"><span>转速</span><span><span id="frpm" class="big">00000</span><span class="unit">RPM</span></span></div>
       </div>
     </section>
@@ -174,6 +183,14 @@ button.wide{width:100%}
     <!-- ===== 风扇设置 ===== -->
     <section id="pg-fan" class="spage">
       <h2 class="h2" style="margin-top:0">风扇参数设置</h2>
+
+      <!-- 运行状态：从主页移入，实时显示启停/模式/占空比 -->
+      <div class="card" style="margin-bottom:10px">
+        <h3 style="margin:0 0 8px;color:#9af">运行状态</h3>
+        <div class="row"><span>启停状态</span><span id="fst"><span class="sec">关闭</span></span></div>
+        <div class="row"><span>模式</span><span id="fmode" class="sec">自动温控</span></div>
+        <div class="row"><span>占空比</span><span><span id="fdty" class="big">0</span><span class="unit">%</span></span></div>
+      </div>
 
       <div class="row"><span>模式</span>
         <label><input type="radio" name="fm" id="fm_auto" onchange="fanSetMode(1)"> 自动温控</label>
@@ -414,12 +431,12 @@ function renderState(s){
   whPaused[1]=s.ch1.paused?1:0;
   whPaused[2]=s.ch2.paused?1:0;
 
-  /* 风扇监控卡片 — 温度整数，不带小数 */
+  /* 风扇状态 — 温度/转速在主页，启停/模式/占空比在风扇设置页（整数温度，不带小数） */
   const f=s.fan;
   $('fst').innerHTML=f.en?'<span style="color:#2e8">运行中</span>':'<span class="sec">关闭</span>';
   $('fmode').textContent=f.auto?'自动温控':'手动';
-  $('ftmp').textContent=(+f.temp).toFixed(0)+'°C';
   $('fdty').textContent=f.duty;
+  $('ftmp').textContent=(+f.temp).toFixed(0)+'°C';
   let r=String(f.rpm); while(r.length<5)r='0'+r;  /* 恒定 5 位数 00000 */
   $('frpm').textContent=r;
 
@@ -505,12 +522,16 @@ function sendWh(ch,act){
 function fanToggleRun(){ writeCmd('fan:run:'+(fanRunState?0:1)); }
 
 /* ---- 左侧设置菜单：收起/展开 + 点击菜单项切换主内容区面板 ---- */
-let menuOpen=true;
+let menuOpen=false;   /* 初始收起：进页面直接看主监控，不弹设置菜单 */
 function toggleMenu(){
   menuOpen=!menuOpen;
   $('smenu').style.display=menuOpen?'block':'none';
   document.body.classList.toggle('menu-open',menuOpen);
 }
+/* 点击菜单/按钮外的空白区域自动收起设置菜单 */
+document.addEventListener('click',e=>{
+  if(menuOpen && !e.target.closest('#smenu') && !e.target.closest('#menuBtn')) toggleMenu();
+});
 function showPage(id){
   document.querySelectorAll('.sitem').forEach(b=>b.classList.toggle('active',b.dataset.page===id));
   document.querySelectorAll('.spage').forEach(p=>p.classList.toggle('active',p.id===id));
