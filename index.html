@@ -4,16 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GSH-750S 电源监控（蓝牙）</title>
-<!-- Web Bluetooth 宿主页：界面与设备 WiFi 仪表盘一致。
-     数据经 BLE GATT 传输（配网 0xFFE1 / 状态 0xFFE2 分块读 / 控制 0xFFE3），
-     受 BLE 速率限制，状态按 1s 轮询（WiFi 页是 200ms 实时曲线，这里做不了）。 -->
+<!-- Web Bluetooth 宿主页：界面与设备 WiFi 仪表盘一致（顶栏 + 左侧设置菜单 + 主内容区切换）。
+     数据经 BLE GATT 传输（配网 0xFFE1 / 状态 0xFFE2 分块读 / 控制 0xFFE3 / OTA 0xFFE4），
+     受 BLE 速率限制，状态按 1s 轮询（WiFi 页是 200ms，这里做不了）。 -->
 <style>
 *{box-sizing:border-box}
 body{font-family:sans-serif;margin:0;padding:12px;background:#111;color:#eee;font-size:14px}
-.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px}
-.top h1{font-size:18px;margin:0}
-.top-r{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.status-line{font-size:11px;color:#888;margin:0 0 10px;min-height:15px;word-break:break-all}
 .sec{font-size:11px;color:#888}
 button{padding:8px 14px;border:none;border-radius:6px;background:#2a7;color:#fff;cursor:pointer;font-size:13px}
 button:active{opacity:.7}
@@ -45,7 +41,9 @@ button.wide{width:100%}
 .drbar{height:12px;border-radius:4px;background:#1a1a1a;border:1px solid #333;overflow:hidden;margin-top:4px}
 .drbar i{display:block;height:100%;border-radius:3px;transition:width .2s linear,background-color .2s linear}
 .w100{width:100%;box-sizing:border-box;margin:4px 0 8px}
-#wifipanel input[type=text],#wifipanel input[type=password]{width:100%;box-sizing:border-box;padding:8px;margin:4px 0;border:1px solid #444;border-radius:6px;background:#222;color:#eee;font-size:13px}
+.spage ul{list-style:none;padding:0}
+.spage li{padding:8px;margin:4px 0;background:#222;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.spage input[type=text],.spage input[type=password]{width:100%;box-sizing:border-box;padding:8px;margin:4px 0;border:1px solid #444;border-radius:6px;background:#222;color:#eee;font-size:13px}
 /* 操作确认弹窗：半透明遮罩淡入 + 背景不可操作（fixed 全屏盖住），确定红/取消绿 */
 #confirmOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center;animation:cfFade .18s ease}
 @keyframes cfFade{from{opacity:0}to{opacity:1}}
@@ -53,211 +51,265 @@ button.wide{width:100%}
 .cfbox h4{margin:0 0 8px;font-size:15px;color:#fff}
 .cfbox .cfdesc{font-size:13px;color:#bbb;line-height:1.6;margin-bottom:16px}
 .cfbtns{display:flex;gap:8px;justify-content:flex-end}
+/* 正经网页布局：顶栏 + 左侧设置菜单 + 主内容区切换（与 WiFi 主页一致） */
+.topbar{display:flex;justify-content:flex-start;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap}
+.topbar h1{font-size:18px;margin:0}
+.top-r{margin-left:auto;display:flex;gap:8px;align-items:center}
+#menuBtn{padding:8px 12px;background:#555;font-size:14px}
+.status-line{font-size:11px;color:#888;margin:0 0 10px;min-height:15px;word-break:break-all}
+.set-layout{display:flex;gap:10px;align-items:flex-start}
+.smenu{width:150px;flex-shrink:0;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:8px}
+.smenu-head{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#9f9;padding:4px 6px 8px;border-bottom:1px solid #333;margin-bottom:6px}
+.smenu-head button{background:none;color:#888;padding:0;font-size:16px;line-height:1}
+.sitem{display:block;width:100%;text-align:left;padding:9px 10px;margin:2px 0;background:none;border:none;border-radius:6px;color:#bbb;font-size:13px;cursor:pointer}
+.sitem:hover{background:#222;color:#eee}
+.sitem.active{background:#2a7;color:#fff}
+.scontent{flex:1;min-width:0;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:12px}
+.spage{display:none}
+.spage.active{display:block}
+/* 窄屏（手机）：侧栏改为覆盖式抽屉，半透明遮罩 */
+@media (max-width:640px){
+  .smenu{position:fixed;top:0;left:0;bottom:0;z-index:300;width:170px;border-radius:0;box-shadow:4px 0 24px rgba(0,0,0,.6)}
+  body.menu-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200}
+}
+/* 未连接时的配对引导卡片 */
+#pairCard{max-width:430px;margin:44px auto;background:#1c1c1c;border:1px solid #333;border-radius:12px;padding:32px 24px;text-align:center}
+#pairCard .pico{font-size:36px;line-height:1;margin-bottom:12px}
+#pairCard h2{margin:0 0 8px;font-size:19px;color:#9f9}
+#pairCard p{font-size:13px;color:#bbb;line-height:1.7;margin:0 0 18px}
+#btnConnect{padding:12px 30px;font-size:16px;font-weight:bold}
 </style>
 </head>
 <body>
-<div class="top">
+<div class="topbar">
+  <button class="gray" id="menuBtn" onclick="toggleMenu()">☰ 设置</button>
   <h1>GSH-750S</h1>
   <div class="top-r">
-    <span class="sec" id="date">----/--/--</span>
-    <span class="sec" id="tm">--:--:--</span>
-    <button id="btnConnect">连接设备</button>
-    <button class="gray" id="btnDisconnect" disabled>断开</button>
-    <button class="gray" id="wifibt" onclick="toggleProv()">其他设置</button>
+    <button class="gray" id="btnDisconnect" disabled onclick="disconnect()">断开</button>
   </div>
 </div>
-<div class="status-line" id="status">未连接。需 Android Chrome / Windows Edge（Web Bluetooth），iPhone Safari 不支持。</div>
+<div class="status-line" id="status"></div>
 
-<!-- 其他设置面板：内嵌式，显示/隐藏切换（BLE 支持电流校准/屏幕亮度/WiFi 配网，与设备 WiFi 网页一致） -->
-<div id="wifipanel" style="display:none;margin-top:12px;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:12px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <h3 style="margin:0;color:#9f9">其他设置</h3>
-  </div>
-
-  <!-- ===== 子区 0：电流校准（与设备 WiFi 网页一致） ===== -->
-  <div style="border:1px solid #333;border-radius:6px;padding:10px;margin-bottom:12px;background:#171717">
-    <h4 style="margin:0 0 8px;color:#9f9">电流校准</h4>
-    <div class="sec" style="margin-bottom:8px">用电子负载/万用表标定：系数 = 实际电流 ÷ 设备显示电流（默认 1.000）</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      <div>
-        <div class="sec" style="font-size:10px;margin-bottom:3px">校准系数</div>
-        <input type="number" id="cal_gain" step="0.001" min="0.1" max="5" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px;text-align:center">
-      </div>
-      <div>
-        <div class="sec" style="font-size:10px;margin-bottom:3px">采样平均</div>
-        <select id="cal_avg" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px">
-          <option value="1">1 次（最快）</option>
-          <option value="4">4 次</option>
-          <option value="16">16 次</option>
-          <option value="64">64 次</option>
-          <option value="128">128 次</option>
-          <option value="256">256 次</option>
-          <option value="512">512 次</option>
-          <option value="1024">1024 次（最平滑）</option>
-        </select>
-      </div>
-      <div>
-        <div class="sec" style="font-size:10px;margin-bottom:3px">IIR 平滑</div>
-        <input type="number" id="cal_iir" step="0.01" min="0.02" max="1" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px;text-align:center">
-      </div>
-    </div>
-    <div class="sec" style="font-size:11px;color:#888;margin-top:6px">平均次数越多读数越稳但反应越慢；平滑数值越小越稳但越慢（越大越快但易跳动）。</div>
-    <div class="sec" id="cal_msg" style="margin-top:6px"></div>
-    <button id="cal_save" onclick="calSave()" style="width:100%;margin-top:8px;padding:8px;border:none;border-radius:4px;background:#2a5;color:#fff;font-size:14px;cursor:pointer">上传参数</button>
-  </div>
-
-  <!-- ===== 子区 1：屏幕亮度（PWM 背光，仅内存调节，不写 NVS 防闪存磨损） ===== -->
-  <div style="border:1px solid #333;border-radius:6px;padding:10px;margin-bottom:12px;background:#171717">
-    <h4 style="margin:0 0 8px;color:#9f9">屏幕亮度</h4>
-    <div style="display:flex;align-items:center;gap:10px">
-      <input type="range" id="bl_slider" min="0" max="100" step="1" value="100"
-             style="flex:1" oninput="blLive(this.value)">
-      <span class="sec" style="min-width:38px;text-align:right"><span id="bl_val">100</span>%</span>
-    </div>
-  </div>
-
-  <!-- ===== 子区 2：WiFi 配网（蓝牙下发） ===== -->
-  <div style="border:1px solid #333;border-radius:6px;padding:10px;background:#171717">
-    <h4 style="margin:0 0 8px;color:#9f9">WiFi 配网（蓝牙下发）</h4>
-    <div class="sec" style="margin-bottom:8px">通过蓝牙把 WiFi 凭据发给设备，设备随后自动连接。</div>
-    <form id="provForm">
-      <input type="text" id="p_ssid" placeholder="WiFi 名称 (SSID)" required>
-      <input type="password" id="p_pwd" placeholder="密码（留空则复用已保存密码）">
-      <button type="submit" class="wide" style="margin-top:6px">下发并连接</button>
-    </form>
-    <p id="prov_msg" class="sec" style="margin-top:6px"></p>
-  </div>
+<!-- 未连接：配对引导卡片（点击"连接设备"走 Web Bluetooth 配对） -->
+<div id="pairCard">
+  <div class="pico">🔗</div>
+  <h2>GSH-750S 蓝牙控制</h2>
+  <p>通过 Web Bluetooth 与设备配对后，即可查看电源数据、控制 CH1/CH2 与风扇、校准电流、下发 WiFi 配网等。</p>
+  <button id="btnConnect">连接设备</button>
+  <div class="sec" style="margin-top:12px">需 Android Chrome / Windows Edge；iPhone Safari 不支持 Web Bluetooth。</div>
 </div>
 
-<div id="main" style="display:none">
-  <!-- 主卡片：总功率 + 负载率 + 累计电能/时长 -->
-  <div class="card">
-    <div class="row"><span>总功率</span><span><span id="pw" class="big">0.0</span><span class="unit">W</span></span></div>
-    <div class="row"><span>负载率</span><span id="dr">0%</span></div>
-    <div class="drbar"><i id="drbar" style="width:0%;background:#2a7"></i></div>
-    <div class="row"><span>累计电能 <span id="tp" class="sec" style="margin-left:4px"></span></span><span id="tot">0.00 Wh</span></div>
-    <div class="row"><span>运行时长</span><span id="run">00:00:00</span></div>
-    <div class="btns">
-      <button id="totp" class="gray" onclick="whCtrl('total','toggle')">暂停</button>
-      <button class="red" onclick="whCtrl('total','reset')">全局清零</button>
-    </div>
-  </div>
+<!-- 已连接：顶栏 + 左侧设置菜单 + 主内容区切换 -->
+<div id="app" class="set-layout" style="display:none">
+  <aside id="smenu" class="smenu">
+    <div class="smenu-head"><span>设置</span><button onclick="toggleMenu()">✕</button></div>
+    <button class="sitem active" data-page="pg-mon"  onclick="showPage('pg-mon')">主监控</button>
+    <button class="sitem" data-page="pg-fan"  onclick="showPage('pg-fan')">风扇设置</button>
+    <button class="sitem" data-page="pg-cal"  onclick="showPage('pg-cal')">电流校准</button>
+    <button class="sitem" data-page="pg-bl"   onclick="showPage('pg-bl')">屏幕亮度</button>
+    <button class="sitem" data-page="pg-wifi" onclick="showPage('pg-wifi')">WiFi 配网</button>
+    <button class="sitem" data-page="pg-ota"  onclick="showPage('pg-ota')">固件升级</button>
+  </aside>
 
-  <!-- CH1 / CH2 -->
-  <div class="grid">
-    <div class="card">
-      <h3><span class="ch-chip ch1">CH1</span></h3>
-      <button id="ch1pwr" class="pwrbtn off sm" onclick="toggleCh(1)">POWER OFF</button>
-      <div class="row"><span>电压</span><span id="ch1v">0.000 V</span></div>
-      <div class="row"><span>电流</span><span id="ch1a">0.000 A</span></div>
-      <div class="row"><span>功率</span><span id="ch1w">0.0 W</span></div>
-      <div class="row"><span>电能</span><span id="ch1wh">0.00 Wh</span></div>
-      <div class="row"><span>时长</span><span id="ch1t">00:00:00</span></div>
-      <div class="btns">
-        <button id="ch1p" class="gray" onclick="whCtrl(1,'toggle')">暂停</button>
-        <button class="red" onclick="whCtrl(1,'reset')">清零</button>
+  <main class="scontent">
+    <!-- ===== 主监控 ===== -->
+    <section id="pg-mon" class="spage active">
+      <!-- 主卡片：总功率 + 负载率 + 累计电能/时长 -->
+      <div class="card">
+        <div class="row"><span>总功率</span><span><span id="pw" class="big">0.0</span><span class="unit">W</span></span></div>
+        <div class="row"><span>负载率</span><span id="dr">0%</span></div>
+        <div class="drbar"><i id="drbar" style="width:0%;background:#2a7"></i></div>
+        <div class="row"><span>累计电能 <span id="tp" class="sec" style="margin-left:4px"></span></span><span id="tot">0.00 Wh</span></div>
+        <div class="row"><span>运行时长</span><span id="run">00:00:00</span></div>
+        <div class="btns">
+          <button id="totp" class="gray" onclick="whCtrl('total','toggle')">暂停</button>
+          <button class="red" onclick="whCtrl('total','reset')">全局清零</button>
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <h3><span class="ch-chip ch2">CH2</span></h3>
-      <button id="ch2pwr" class="pwrbtn off sm" onclick="toggleCh(2)">POWER OFF</button>
-      <div class="row"><span>电压</span><span id="ch2v">0.000 V</span></div>
-      <div class="row"><span>电流</span><span id="ch2a">0.000 A</span></div>
-      <div class="row"><span>功率</span><span id="ch2w">0.0 W</span></div>
-      <div class="row"><span>电能</span><span id="ch2wh">0.00 Wh</span></div>
-      <div class="row"><span>时长</span><span id="ch2t">00:00:00</span></div>
-      <div class="btns">
-        <button id="ch2p" class="gray" onclick="whCtrl(2,'toggle')">暂停</button>
-        <button class="red" onclick="whCtrl(2,'reset')">清零</button>
+
+      <!-- CH1 / CH2 -->
+      <div class="grid">
+        <div class="card">
+          <h3><span class="ch-chip ch1">CH1</span></h3>
+          <button id="ch1pwr" class="pwrbtn off sm" onclick="toggleCh(1)">POWER OFF</button>
+          <div class="row"><span>电压</span><span id="ch1v">0.000 V</span></div>
+          <div class="row"><span>电流</span><span id="ch1a">0.000 A</span></div>
+          <div class="row"><span>功率</span><span id="ch1w">0.0 W</span></div>
+          <div class="row"><span>电能</span><span id="ch1wh">0.00 Wh</span></div>
+          <div class="row"><span>时长</span><span id="ch1t">00:00:00</span></div>
+          <div class="btns">
+            <button id="ch1p" class="gray" onclick="whCtrl(1,'toggle')">暂停</button>
+            <button class="red" onclick="whCtrl(1,'reset')">清零</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3><span class="ch-chip ch2">CH2</span></h3>
+          <button id="ch2pwr" class="pwrbtn off sm" onclick="toggleCh(2)">POWER OFF</button>
+          <div class="row"><span>电压</span><span id="ch2v">0.000 V</span></div>
+          <div class="row"><span>电流</span><span id="ch2a">0.000 A</span></div>
+          <div class="row"><span>功率</span><span id="ch2w">0.0 W</span></div>
+          <div class="row"><span>电能</span><span id="ch2wh">0.00 Wh</span></div>
+          <div class="row"><span>时长</span><span id="ch2t">00:00:00</span></div>
+          <div class="btns">
+            <button id="ch2p" class="gray" onclick="whCtrl(2,'toggle')">暂停</button>
+            <button class="red" onclick="whCtrl(2,'reset')">清零</button>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
 
-  <!-- 风扇监控卡片 -->
-  <div class="card" style="margin-top:12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-      <h3 style="margin:0;color:#9af">风扇控制</h3>
-      <button class="gray" id="fanbt" onclick="toggleFan()">风扇设置</button>
-    </div>
-    <div class="row"><span>启停状态</span><span id="fst"><span class="sec">关闭</span></span></div>
-    <div class="row"><span>模式</span><span id="fmode" class="sec">自动温控</span></div>
-    <div class="row"><span>温度</span><span id="ftmp">35°C</span></div>
-    <div class="row"><span>占空比</span><span><span id="fdty" class="big">0</span><span class="unit">%</span></span></div>
-    <div class="row"><span>转速</span><span><span id="frpm" class="big">00000</span><span class="unit">RPM</span></span></div>
-  </div>
-
-  <!-- 风扇设置内嵌面板 (toggle) — 所有改动先缓存，点"上传参数"才真正写 NVS -->
-  <div id="fanpanel" style="display:none;margin-top:12px;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:12px">
-    <h3 style="margin:0 0 10px;color:#9af">风扇参数设置</h3>
-
-    <div class="row"><span>模式</span>
-      <label><input type="radio" name="fm" id="fm_auto" onchange="fanSetMode(1)"> 自动温控</label>
-      <label><input type="radio" name="fm" id="fm_man"  onchange="fanSetMode(0)"> 手动</label>
-    </div>
-
-    <div id="fanManBlk" style="margin-top:8px;padding:10px;background:#222;border-radius:6px;display:none">
-      <div class="row"><span>手动占空比 (<span id="l_man">60</span>%)</span></div>
-      <input type="range" min="0" max="100" value="60" id="s_man" class="w100"
-             oninput="fanSyncSlider('man',this.value)">
-      <!-- 运行总开关（仅手动模式）：停止=直接断开风扇电源 MOS 绝对停止 -->
-      <div style="margin-top:10px">
-        <button id="fanRunBtn" onclick="fanToggleRun()" style="background:#2a7;min-width:90px;font-weight:bold">开启</button>
+      <!-- 风扇监控卡片（点击"风扇设置"跳到左侧菜单中的风扇设置页） -->
+      <div class="card" style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <h3 style="margin:0;color:#9af">风扇控制</h3>
+          <button class="gray" onclick="showPage('pg-fan')">风扇设置</button>
+        </div>
+        <div class="row"><span>启停状态</span><span id="fst"><span class="sec">关闭</span></span></div>
+        <div class="row"><span>模式</span><span id="fmode" class="sec">自动温控</span></div>
+        <div class="row"><span>温度</span><span id="ftmp">35°C</span></div>
+        <div class="row"><span>占空比</span><span><span id="fdty" class="big">0</span><span class="unit">%</span></span></div>
+        <div class="row"><span>转速</span><span><span id="frpm" class="big">00000</span><span class="unit">RPM</span></span></div>
       </div>
-    </div>
+    </section>
 
-    <div id="fanAutoBlk" style="margin-top:8px;padding:10px;background:#222;border-radius:6px">
-      <div class="row"><span>启动温度 T<sub>on</sub> (<span id="l_on">40</span>°C)</span>
-        <input type="number" id="n_on" step="1" min="0" max="120" style="width:80px" oninput="fanSyncInput('on',this.value)"></div>
-      <input type="range" min="0" max="120" value="40" id="s_on" class="w100"
-             oninput="fanSyncSlider('on',this.value)">
+    <!-- ===== 风扇设置 ===== -->
+    <section id="pg-fan" class="spage">
+      <h2 class="h2" style="margin-top:0">风扇参数设置</h2>
 
-      <div class="row" style="margin-top:10px"><span>温控温度 T<sub>lin</sub> (<span id="l_lin">50</span>°C)</span>
-        <input type="number" id="n_lin" step="1" min="0" max="120" style="width:80px" oninput="fanSyncInput('lin',this.value)"></div>
-      <input type="range" min="0" max="120" value="50" id="s_lin" class="w100"
-             oninput="fanSyncSlider('lin',this.value)">
-
-      <div class="row" style="margin-top:10px"><span>满速温度 T<sub>full</sub> (<span id="l_full">70</span>°C)</span>
-        <input type="number" id="n_full" step="1" min="10" max="150" style="width:80px" oninput="fanSyncInput('full',this.value)"></div>
-      <input type="range" min="10" max="150" value="70" id="s_full" class="w100"
-             oninput="fanSyncSlider('full',this.value)">
-
-      <div class="row" style="margin-top:10px"><span>启动迟滞 H<sub>on</sub> (<span id="l_hon">3</span>°C)</span>
-        <input type="number" id="n_hon" step="1" min="0" max="20" style="width:80px" oninput="fanSyncInput('hon',this.value)"></div>
-      <input type="range" min="0" max="20" value="3" id="s_hon" class="w100"
-             oninput="fanSyncSlider('hon',this.value)">
-
-      <div class="row" style="margin-top:10px"><span>关闭迟滞 H<sub>off</sub> (<span id="l_hoff">5</span>°C)</span>
-        <input type="number" id="n_hoff" step="1" min="0" max="20" style="width:80px" oninput="fanSyncInput('hoff',this.value)"></div>
-      <input type="range" min="0" max="20" value="5" id="s_hoff" class="w100"
-             oninput="fanSyncSlider('hoff',this.value)">
-
-      <div class="row" style="margin-top:10px"><span>最小占空比 (<span id="l_dmin">35</span>%)</span>
-        <input type="number" id="n_dmin" step="1" min="0" max="100" style="width:80px" oninput="fanSyncInput('dmin',this.value)"></div>
-      <input type="range" min="0" max="100" value="35" id="s_dmin" class="w100"
-             oninput="fanSyncSlider('dmin',this.value)">
-
-      <div class="row" style="margin-top:10px"><span>最大占空比 (<span id="l_dmax">100</span>%)</span>
-        <input type="number" id="n_dmax" step="1" min="0" max="100" style="width:80px" oninput="fanSyncInput('dmax',this.value)"></div>
-      <input type="range" min="0" max="100" value="100" id="s_dmax" class="w100"
-             oninput="fanSyncSlider('dmax',this.value)">
-
-      <!-- 锁定 + 上传参数：跟随自动温控区，锁保护温度参数防误触 -->
-      <div style="display:flex;gap:6px;align-items:center;margin-top:14px">
-        <button id="fanLockBtn" onclick="fanToggleLock()" title="点击解锁后可修改参数" style="background:#c33;min-width:96px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 已锁定</button>
-        <button id="fanSaveBtn" class="" onclick="fanSaveAll()" style="background:#2a7">上传参数</button>
+      <div class="row"><span>模式</span>
+        <label><input type="radio" name="fm" id="fm_auto" onchange="fanSetMode(1)"> 自动温控</label>
+        <label><input type="radio" name="fm" id="fm_man"  onchange="fanSetMode(0)"> 手动</label>
       </div>
-      <!-- 上传反馈消息条：成功/失败持久显示 5 秒，避免一闪而过看不清 -->
-      <div id="fan_msg" style="display:none;margin-top:10px;padding:8px 10px;border-radius:6px;font-size:13px"></div>
 
-      <div style="margin-top:10px;color:#888;font-size:12px">
-        说明：T<sub>on</sub> 以下关风扇，温度升到 T<sub>on</sub>+H<sub>on</sub> 开；
-        启动后 T<sub>on</sub>~T<sub>lin</sub> 保持最低占空比运行，
-        T<sub>lin</sub>~T<sub>full</sub> 线性升速到满速；
-        运行中温度降到 T<sub>on</sub>-H<sub>off</sub> 才关（防抖动）。
-        <span style="color:#fa1">参数改动须点「上传参数」写入设备；上传后风扇停止，需手动开启。</span>
+      <div id="fanManBlk" style="margin-top:8px;padding:10px;background:#222;border-radius:6px;display:none">
+        <div class="row"><span>手动占空比 (<span id="l_man">60</span>%)</span></div>
+        <input type="range" min="0" max="100" value="60" id="s_man" class="w100"
+               oninput="fanSyncSlider('man',this.value)">
+        <!-- 运行总开关（仅手动模式）：停止=直接断开风扇电源 MOS 绝对停止 -->
+        <div style="margin-top:10px">
+          <button id="fanRunBtn" onclick="fanToggleRun()" style="background:#2a7;min-width:90px;font-weight:bold">开启</button>
+        </div>
       </div>
-    </div>
-  </div>
+
+      <div id="fanAutoBlk" style="margin-top:8px;padding:10px;background:#222;border-radius:6px">
+        <div class="row"><span>启动温度 T<sub>on</sub> (<span id="l_on">40</span>°C)</span>
+          <input type="number" id="n_on" step="1" min="0" max="120" style="width:80px" oninput="fanSyncInput('on',this.value)"></div>
+        <input type="range" min="0" max="120" value="40" id="s_on" class="w100"
+               oninput="fanSyncSlider('on',this.value)">
+
+        <div class="row" style="margin-top:10px"><span>温控温度 T<sub>lin</sub> (<span id="l_lin">50</span>°C)</span>
+          <input type="number" id="n_lin" step="1" min="0" max="120" style="width:80px" oninput="fanSyncInput('lin',this.value)"></div>
+        <input type="range" min="0" max="120" value="50" id="s_lin" class="w100"
+               oninput="fanSyncSlider('lin',this.value)">
+
+        <div class="row" style="margin-top:10px"><span>满速温度 T<sub>full</sub> (<span id="l_full">70</span>°C)</span>
+          <input type="number" id="n_full" step="1" min="10" max="150" style="width:80px" oninput="fanSyncInput('full',this.value)"></div>
+        <input type="range" min="10" max="150" value="70" id="s_full" class="w100"
+               oninput="fanSyncSlider('full',this.value)">
+
+        <div class="row" style="margin-top:10px"><span>启动迟滞 H<sub>on</sub> (<span id="l_hon">3</span>°C)</span>
+          <input type="number" id="n_hon" step="1" min="0" max="20" style="width:80px" oninput="fanSyncInput('hon',this.value)"></div>
+        <input type="range" min="0" max="20" value="3" id="s_hon" class="w100"
+               oninput="fanSyncSlider('hon',this.value)">
+
+        <div class="row" style="margin-top:10px"><span>关闭迟滞 H<sub>off</sub> (<span id="l_hoff">5</span>°C)</span>
+          <input type="number" id="n_hoff" step="1" min="0" max="20" style="width:80px" oninput="fanSyncInput('hoff',this.value)"></div>
+        <input type="range" min="0" max="20" value="5" id="s_hoff" class="w100"
+               oninput="fanSyncSlider('hoff',this.value)">
+
+        <div class="row" style="margin-top:10px"><span>最小占空比 (<span id="l_dmin">35</span>%)</span>
+          <input type="number" id="n_dmin" step="1" min="0" max="100" style="width:80px" oninput="fanSyncInput('dmin',this.value)"></div>
+        <input type="range" min="0" max="100" value="35" id="s_dmin" class="w100"
+               oninput="fanSyncSlider('dmin',this.value)">
+
+        <div class="row" style="margin-top:10px"><span>最大占空比 (<span id="l_dmax">100</span>%)</span>
+          <input type="number" id="n_dmax" step="1" min="0" max="100" style="width:80px" oninput="fanSyncInput('dmax',this.value)"></div>
+        <input type="range" min="0" max="100" value="100" id="s_dmax" class="w100"
+               oninput="fanSyncSlider('dmax',this.value)">
+
+        <!-- 锁定 + 上传参数：跟随自动温控区，锁保护温度参数防误触 -->
+        <div style="display:flex;gap:6px;align-items:center;margin-top:14px">
+          <button id="fanLockBtn" onclick="fanToggleLock()" title="点击解锁后可修改参数" style="background:#c33;min-width:96px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 已锁定</button>
+          <button id="fanSaveBtn" class="" onclick="fanSaveAll()" style="background:#2a7">上传参数</button>
+        </div>
+        <!-- 上传反馈消息条：成功/失败持久显示 5 秒，避免一闪而过看不清 -->
+        <div id="fan_msg" style="display:none;margin-top:10px;padding:8px 10px;border-radius:6px;font-size:13px"></div>
+
+        <div style="margin-top:10px;color:#888;font-size:12px">
+          说明：T<sub>on</sub> 以下关风扇，温度升到 T<sub>on</sub>+H<sub>on</sub> 开；
+          启动后 T<sub>on</sub>~T<sub>lin</sub> 保持最低占空比运行，
+          T<sub>lin</sub>~T<sub>full</sub> 线性升速到满速；
+          运行中温度降到 T<sub>on</sub>-H<sub>off</sub> 才关（防抖动）。
+          <span style="color:#fa1">参数改动须点「上传参数」写入设备；上传后风扇停止，需手动开启。</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 电流校准 ===== -->
+    <section id="pg-cal" class="spage">
+      <h2 class="h2" style="margin-top:0">电流校准</h2>
+      <div class="sec" style="margin-bottom:8px">用电子负载/万用表标定：系数 = 实际电流 ÷ 设备显示电流（默认 1.000）</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div>
+          <div class="sec" style="font-size:10px;margin-bottom:3px">校准系数</div>
+          <input type="number" id="cal_gain" step="0.001" min="0.1" max="5" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px;text-align:center">
+        </div>
+        <div>
+          <div class="sec" style="font-size:10px;margin-bottom:3px">采样平均</div>
+          <select id="cal_avg" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px">
+            <option value="1">1 次（最快）</option>
+            <option value="4">4 次</option>
+            <option value="16">16 次</option>
+            <option value="64">64 次</option>
+            <option value="128">128 次</option>
+            <option value="256">256 次</option>
+            <option value="512">512 次</option>
+            <option value="1024">1024 次（最平滑）</option>
+          </select>
+        </div>
+        <div>
+          <div class="sec" style="font-size:10px;margin-bottom:3px">IIR 平滑</div>
+          <input type="number" id="cal_iir" step="0.01" min="0.02" max="1" style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #444;border-radius:4px;background:#222;color:#eee;font-size:13px;text-align:center">
+        </div>
+      </div>
+      <div class="sec" style="font-size:11px;color:#888;margin-top:6px">平均次数越多读数越稳但反应越慢；平滑数值越小越稳但越慢（越大越快但易跳动）。</div>
+      <div class="sec" id="cal_msg" style="margin-top:6px"></div>
+      <button id="cal_save" onclick="calSave()" style="width:100%;margin-top:8px;padding:8px;border:none;border-radius:4px;background:#2a5;color:#fff;font-size:14px;cursor:pointer">上传参数</button>
+    </section>
+
+    <!-- ===== 屏幕亮度 ===== -->
+    <section id="pg-bl" class="spage">
+      <h2 class="h2" style="margin-top:0">屏幕亮度</h2>
+      <div class="sec" style="margin-bottom:8px">拖动实时调节屏幕背光亮度（仅内存生效，重启恢复默认 100%，不写闪存）。</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="range" id="bl_slider" min="0" max="100" step="1" value="100"
+               style="flex:1" oninput="blLive(this.value)">
+        <span class="sec" style="min-width:38px;text-align:right"><span id="bl_val">100</span>%</span>
+      </div>
+    </section>
+
+    <!-- ===== WiFi 配网 ===== -->
+    <section id="pg-wifi" class="spage">
+      <h2 class="h2" style="margin-top:0">WiFi 配网（蓝牙下发）</h2>
+      <div class="sec" style="margin-bottom:8px">通过蓝牙把 WiFi 凭据发给设备，设备随后自动连接。配网成功后访问 <span style="color:#9cf">http://gsh-750s.local</span> 或路由分配 IP 打开主页。</div>
+      <h4 style="margin:12px 0 4px;color:#9f9">手动连接</h4>
+      <form id="provForm">
+        <input type="text" id="p_ssid" placeholder="WiFi 名称 (SSID)" required>
+        <input type="password" id="p_pwd" placeholder="密码（可留空）">
+        <button type="submit" style="margin-top:6px">下发并连接</button>
+      </form>
+      <p id="prov_msg" class="sec" style="margin-top:6px"></p>
+    </section>
+
+    <!-- ===== 固件升级 ===== -->
+    <section id="pg-ota" class="spage">
+      <h2 class="h2" style="margin-top:0">固件升级（蓝牙）</h2>
+      <div class="sec" style="margin-bottom:8px">选择编译生成的 .bin 固件经蓝牙上传（约 1~3 分钟，视固件大小）。升级期间请勿断开蓝牙或断电；完成后设备自动重启（新固件异常会自动回退旧固件）。</div>
+      <input type="file" id="fwfile" accept=".bin" style="width:100%;color:#eee;font-size:13px">
+      <div class="drbar" style="height:10px;margin-top:8px"><i id="fwbar" style="display:block;height:100%;width:0%;background:#2a7;border-radius:3px"></i></div>
+      <div class="sec" id="fwmsg" style="margin-top:6px"></div>
+      <button onclick="fwUpgrade()" style="width:100%;margin-top:8px;padding:8px;border:none;border-radius:4px;background:#2a5;color:#fff;font-size:14px;cursor:pointer">开始升级</button>
+    </section>
+  </main>
 </div>
 
 <!-- 操作确认弹窗：清零/暂停等危险操作需二次确认（半透明遮罩淡入，背景不可操作） -->
@@ -274,7 +326,7 @@ button.wide{width:100%}
 
 <script>
 const $=id=>document.getElementById(id);
-let device=null, service=null, provChar=null, stateChar=null, ctlChar=null, pollTimer=null;
+let device=null, service=null, provChar=null, stateChar=null, ctlChar=null, otaChar=null, pollTimer=null;
 
 /* ---------- 数值格式化（与设备 WiFi 网页一致） ---------- */
 function fv(v){
@@ -327,8 +379,6 @@ let fanLocked=true;               /* 默认锁定：防止误触，解锁后才�
 let fanRunState=0;                /* 风扇运行总开关状态，renderState 同步 */
 
 function renderState(s){
-  $('date').textContent=s.date;
-  $('tm').textContent=s.time;
   /* CH1/CH2 电源输出开关状态 */
   const chsw=(id,on)=>{const b=$(id);b.className='pwrbtn '+(on?'on':'off')+' sm';b.textContent=on?'POWER ON':'POWER OFF';};
   chsw('ch1pwr',s.ch1.power_on?1:0);
@@ -378,12 +428,12 @@ function renderState(s){
   const rb=$('fanRunBtn');
   if(rb){ rb.textContent=fanRunState?'停止':'开启'; rb.style.background=fanRunState?'#c33':'#2a7'; }
 
-  /* 风扇设置面板：展开状态时才回填；如果用户正在编辑 (fanDirty)，不回填避免覆盖 */
-  if($('fanpanel').style.display==='block' && !fanDirty){
+  /* 风扇设置页：当前处于风扇设置页才回填；如果用户正在编辑 (fanDirty)，不回填避免覆盖 */
+  if($('pg-fan').classList.contains('active') && !fanDirty){
     fanFillPanelCfg(f);
   }
 
-  /* 电流校准参数（其他设置面板回填用，校准值不在主界面显示） */
+  /* 电流校准参数（校准页回填用，校准值不在主界面显示） */
   if(s.cal) window._cal=s.cal;
 }
 
@@ -453,14 +503,23 @@ function sendWh(ch,act){
 
 /* ---------- 风扇：运行开关 / 模式 / 手动占空比 ---------- */
 function fanToggleRun(){ writeCmd('fan:run:'+(fanRunState?0:1)); }
-function toggleFan(){
-  const p=$('fanpanel'); const show=(p.style.display==='none'||!p.style.display);
-  p.style.display=show?'block':'none';
-  $('fanbt').innerHTML=show?'收起':'风扇设置';
-  if(show){
-    fanSetLocked(true);   /* 每次打开默认锁定 */
-    poll();               /* 打开即回填当前配置 */
+
+/* ---- 左侧设置菜单：收起/展开 + 点击菜单项切换主内容区面板 ---- */
+let menuOpen=true;
+function toggleMenu(){
+  menuOpen=!menuOpen;
+  $('smenu').style.display=menuOpen?'block':'none';
+  document.body.classList.toggle('menu-open',menuOpen);
+}
+function showPage(id){
+  document.querySelectorAll('.sitem').forEach(b=>b.classList.toggle('active',b.dataset.page===id));
+  document.querySelectorAll('.spage').forEach(p=>p.classList.toggle('active',p.id===id));
+  if(id==='pg-fan'){        /* 进入风扇设置页：默认锁定 + 拉一轮状态回填配置 */
+    fanSetLocked(true);
+    poll();
   }
+  if(id==='pg-cal') calLoad();   /* 回填电流校准系数 */
+  if(window.innerWidth<=640) toggleMenu();   /* 窄屏点完菜单项自动收起抽屉 */
 }
 
 /* ---- 风扇设置面板：整数°C + 缓存防误触（点"上传参数"才真正写入） ---- */
@@ -519,7 +578,7 @@ function fanSyncSlider(which,v){
   }
   if(which==='on'  ){ v=clampInt(v,0,120);  $('l_on'  ).textContent=v; $('n_on'  ).value=v; pendingCfg.t_on_x10   =v*10; }
   if(which==='lin' ){ v=clampInt(v,0,120);  $('l_lin' ).textContent=v; $('n_lin' ).value=v; pendingCfg.t_lin_x10  =v*10; }
-  if(which==='full'){ v=clampInt(v,10,150); $('l_full').textContent=v; $('n_full').value=v; pendingCfg.t_full_x10 =v*10; }
+  if(which==='full'){ v=clampInt(v,10,150); $('n_full').value=v; $('l_full').textContent=v; pendingCfg.t_full_x10 =v*10; }
   if(which==='hon' ){ v=clampInt(v,0,20);   $('l_hon' ).textContent=v; $('n_hon' ).value=v; pendingCfg.hyst_on_x10=v*10; }
   if(which==='hoff'){ v=clampInt(v,0,20);   $('l_hoff').textContent=v; $('n_hoff').value=v; pendingCfg.hyst_off_x10=v*10; }
   if(which==='dmin'){ v=clampInt(v,0,100);  $('l_dmin').textContent=v; $('n_dmin').value=v; pendingCfg.duty_min    =v; }
@@ -582,15 +641,6 @@ async function fanSaveAll(){
   }else{
     fanMsg('✗ 发送失败：设备未连接或写入出错',false);
   }
-}
-
-/* ---------- 其他设置面板（内嵌式切换：电流校准 + 屏幕亮度 + WiFi 配网） ---------- */
-function toggleProv(){
-  const wp=$('wifipanel');
-  const show=(wp.style.display==='none'||!wp.style.display);
-  wp.style.display=show?'block':'none';
-  $('wifibt').innerHTML=show?'收起':'其他设置';
-  if(show) calLoad();   /* 展开即回填当前校准值 */
 }
 
 /* ---- 屏幕亮度：拖动实时调节（仅内存生效，不写 NVS；重启回到默认 100%，防闪存磨损） ---- */
@@ -660,9 +710,10 @@ async function connect(){
     provChar =await service.getCharacteristic(0xFFE1);
     stateChar=await service.getCharacteristic(0xFFE2);
     ctlChar  =await service.getCharacteristic(0xFFE3);
-    $('main').style.display='';
+    otaChar  =await service.getCharacteristic(0xFFE4);
+    $('pairCard').style.display='none';   /* 隐藏配对引导卡片，切入主界面 */
+    $('app').style.display='';
     $('btnDisconnect').disabled=false;
-    $('btnConnect').disabled=true;
     setStatus('已连接: '+(device.name||'gsh-750s'));
     await poll();
     pollTimer=setInterval(poll,1000);
@@ -672,9 +723,9 @@ async function connect(){
 }
 function onDisconnected(){
   if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
-  $('main').style.display='none';
+  $('pairCard').style.display='';         /* 回到配对引导卡片 */
+  $('app').style.display='none';
   $('btnDisconnect').disabled=true;
-  $('btnConnect').disabled=false;
   setStatus('已断开连接');
 }
 async function disconnect(){
@@ -698,6 +749,46 @@ $('provForm').addEventListener('submit', async ev=>{
     $('prov_msg').textContent='失败: '+e.message;
   }
 });
+
+/* ---------- 固件升级（蓝牙 OTA）：读 .bin → ota:begin → 分块写 0xFFE4 → ota:end ---------- */
+async function fwUpgrade(){
+  const f=$('fwfile').files[0];
+  const msg=$('fwmsg'), bar=$('fwbar');
+  if(!f){ msg.textContent='请先选择 .bin 固件文件'; return; }
+  if(!otaChar){ setStatus('未连接，请先连接设备'); return; }
+  if(!confirm('升级将覆盖当前固件，期间请勿断开蓝牙或断电；完成后设备自动重启。确定继续？')) return;
+  const file=new Uint8Array(await f.arrayBuffer());
+  const total=file.length;
+  bar.style.width='0%';
+  try{
+    await writeCmd('ota:abort', true);   /* 清理上次可能残留的 OTA 会话 */
+    if(!await writeCmd('ota:begin:'+total, true)){ msg.textContent='发送失败：设备未连接'; return; }
+    /* 轮询一次状态确认设备已进入 OTA（状态 JSON 的 ota 字段=1） */
+    const s=await readState();
+    if(!s.ota){ msg.textContent='设备拒绝升级（固件过大或分区错误）'; return; }
+    let chunk=500, pos=0;      /* 起始块 500B；写失败自动减半直到 20B */
+    while(pos<total){
+      const n=Math.min(chunk,total-pos);
+      try{
+        await otaChar.writeValue(file.subarray(pos,pos+n));
+        pos+=n;
+      }catch(e){
+        if(chunk<=20) throw e;
+        chunk=Math.max(20,Math.floor(chunk/2));   /* 对端 MTU 小 → 降块重试 */
+        continue;
+      }
+      const p=Math.round(pos/total*100);
+      bar.style.width=p+'%';
+      msg.textContent='正在上传 '+p+'% ('+Math.round(pos/1024)+' / '+Math.round(total/1024)+' KB)';
+    }
+    bar.style.width='100%';
+    msg.textContent='上传完成，设备校验中，即将重启…';
+    writeCmd('ota:end', true);
+  }catch(e){
+    msg.textContent='上传失败: '+e.message;
+    writeCmd('ota:abort', true);
+  }
+}
 
 /* ---------- 事件绑定 ---------- */
 $('btnConnect').addEventListener('click',connect);
